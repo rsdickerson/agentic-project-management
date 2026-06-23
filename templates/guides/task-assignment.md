@@ -129,7 +129,7 @@ Perform the following actions:
 6. Read the Worker's Task Bus, then write the Task Prompt to it: `.apm/bus/<agent-slug>/task.md`. For batches, use §4.5 Batch Envelope Format.
 7. Direct the User to the Worker's chat per `{SKILL_PATH:apm-communication}` §2.1 Direct Communication:
    - If the Worker is not yet initialized - direct the User to start a new chat and run `{COMMAND_SLUG:work} <agent-id>`. The Worker detects the pending Task Prompt during init and begins executing. Only on first dispatch to this Worker.
-   - If the Worker is already initialized - direct the User to run `{COMMAND_SLUG:task}` in the Worker's chat.
+   - If the Worker is already initialized - direct the User to ensure the Worker session is active: send any message in the Worker's chat or confirm the Worker is idle-ready. Initialized Workers auto-pick assignments from the Task Bus via work polling — `{COMMAND_SLUG:task}` is not required but remains available as a manual fallback.
    - For batch dispatch - summarize what the Worker will receive (number of Tasks, sequential execution).
    - For parallel dispatch - list each Worker with its required action.
 

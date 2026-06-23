@@ -31,7 +31,7 @@ Determine identity from the `{ARGS}` argument:
 3. Verify bus files exist (`task.md`, `report.md`, `handoff.md`) in the bus directory. Determine your init path from bus state:
    - If Handoff Bus has content, you are an incoming Worker after Handoff. Proceed to §2.2 Incoming Worker Initiation.
    - If Handoff Bus is empty and Task Bus has content, confirm identity to User and proceed to §3 Task Execution Loop.
-   - If both are empty, confirm identity to User and await Task Prompt via `{COMMAND_SLUG:task}`.
+   - If both are empty, confirm identity to User and enter idle state via `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure.
 
 ### 2.2 Incoming Worker Initiation
 
@@ -42,19 +42,21 @@ Perform the following actions:
 4. Confirm Handoff to User: state instance number, logs loaded, readiness to continue. When previous Stages exist, note which specific Task Logs were loaded and which were not, explaining that previous-Stage logs were not loaded for efficiency.
 5. Check Task Bus:
    - If Task Bus has content, the handoff prompt describes a mid-Task or mid-batch continuation. Proceed to §3 Task Execution Loop.
-   - If Task Bus is empty, await Task Prompt via `{COMMAND_SLUG:task}`.
+   - If Task Bus is empty, enter idle state via `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure.
 
 ---
 
 ## 3. Task Execution Loop
 
-When a Task Prompt is available (detected during init or delivered via `{COMMAND_SLUG:task}`):
+When a Task Prompt is available (detected during init, auto-picked from Task Bus, or delivered via `{COMMAND_SLUG:task}`):
 1. **Execute:** See `{GUIDE_PATH:task-execution}` §3 Task Execution Procedure. The guide controls validation, execution, and completion.
 2. **Log:** Create Task Log per `{GUIDE_PATH:task-logging}` §3 Task Logging Procedure.
 3. **Report:** Write Task Report per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery.
-4. **Await:** Wait for next Task Prompt or User instruction.
+4. **Work Queue Check:** After completion, perform `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure — automatically check for additional assignments, continue same-turn when queued work exists, or enter idle state when the queue is empty.
 
-Repeat until all assigned Tasks are Done, User intervenes, or Handoff is needed.
+Repeat until all assigned Tasks are Done, User intervenes, Handoff is needed, or a stop condition halts auto-polling.
+
+**Operator interaction wake:** When idle after Work Queue Check, re-enter `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure at the start of any subsequent operator interaction in this chat — before responding to the operator's message.
 
 ---
 

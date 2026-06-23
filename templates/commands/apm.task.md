@@ -22,6 +22,13 @@ Accepts an optional `[agent-id]` argument. If registered, ignore it (bus path al
 
 4. Cross-validate `agent` field in YAML frontmatter against registered identity. Mismatch flags a routing error - decline and direct User to the correct Worker. Process the Task per `{GUIDE_PATH:task-execution}` §3 Task Execution Procedure.
 
+**Relationship to auto-polling:** Initialized Workers with active work polling automatically check the Task Bus after each assignment completion and on operator interaction when idle (see `{GUIDE_PATH:task-execution}` §3.7). This command remains valid as:
+- **Init trigger:** Required when the Worker is not yet registered (step 2 resolves identity and initializes).
+- **Manual fallback:** Explicit operator override to force a queue check when auto-polling is active or after polling was stopped.
+- **Documentation compatibility:** Equivalent to entering Work Queue Check for registered Workers.
+
+When auto-polling is active, operators typically do not need this command after each Task completion — the Worker picks up queued assignments automatically.
+
 ---
 
 **End of Command**

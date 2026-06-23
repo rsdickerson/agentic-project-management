@@ -39,7 +39,7 @@ Perform the following actions:
 2. Apply Worker Handoff asymmetry:
    - *Mid-Task:* "Read the Task from `task.md`, I completed steps 1-4, resume from step 5." Direct the incoming Worker to read the Task Bus file directly (intact since Task receipt). Include execution progress detail.
    - *Mid-batch:* The batch is still in `task.md`. Describe the state of each Task in the batch - which are complete (logs written), which is in progress and how far, and which have not been started. The incoming Worker reads the intact batch from the Task Bus and continues from where work left off.
-   - *Between-Tasks:* "No active Task, await `{COMMAND_SLUG:task}`." State context and readiness.
+   - *Between-Tasks:* "No active Task — Worker is idle-ready with work polling active." State context and readiness. If assignments are queued on the Task Bus, note that the incoming Worker will auto-detect them during init or Work Queue Check per `{GUIDE_PATH:task-execution}` §3.7. Do not instruct the operator to run `{COMMAND_SLUG:task}` unless manual fallback is needed.
 3. Include: Handoff Log path, instructions to read current Stage Task Logs, and reminder to indicate incoming Worker status in first Task Report (listing specific Task Log files loaded and, when previous Stages exist, noting that previous-Stage logs were not loaded).
 
 ### 2.3 User Review and Finalization
@@ -48,6 +48,15 @@ Perform the following actions:
 1. Write handoff prompt to the Handoff Bus: `.apm/bus/<agent-slug>/handoff.md`.
 2. Present both artifacts to User: Handoff Log (file path) and handoff prompt (bus path). Request review and direct User to start a new chat and run `{COMMAND_SLUG:work} <agent-id>` - the incoming Worker will auto-detect the handoff prompt.
 3. If modifications requested, update accordingly. This completes the outgoing Worker's duties.
+
+### 2.4 Context-Threshold-Triggered Handoff
+
+When Work Queue Check stops due to session context threshold (§3.7.2 in `{GUIDE_PATH:task-execution}`), the operator may initiate Handoff at the Worker's recommendation. During Handoff:
+
+1. Capture in the Handoff Log that polling stopped due to context threshold and how many assignments were completed this session.
+2. In the handoff prompt, note any assignments remaining on the Task Bus — the incoming Worker will auto-pick them during init or Work Queue Check.
+3. Remind the operator to deliver any outstanding Task Reports to the Manager before or during Handoff.
+4. Direct the operator to start a new chat and run `{COMMAND_SLUG:work} <agent-id>` — the incoming Worker processes the handoff prompt and picks up queued work automatically.
 
 ---
 
@@ -96,7 +105,7 @@ Written to `.apm/bus/<agent-slug>/handoff.md`. The incoming Worker processes thi
 - *Current State:* Current Stage, Tasks completed this instance, notes.
 - *Continuation guidance:* Specific guidance for the incoming Worker about in-progress patterns or upcoming work.
 - *Incoming Worker indication:* Remind incoming Worker to include Handoff status in first Task Report - state instance number, list specific Task Log files loaded, and when previous Stages exist note that previous-Stage logs were not loaded. This triggers Manager Handoff detection.
-- *Immediate Next Action:* For mid-Task or mid-batch, instruct the incoming Worker to read the Task Bus and continue. For between-Tasks, state readiness to await `{COMMAND_SLUG:task}`.
+- *Immediate Next Action:* For mid-Task or mid-batch, instruct the incoming Worker to read the Task Bus and continue. For between-Tasks, state idle-ready status with work polling active — the incoming Worker enters Work Queue Check per `{GUIDE_PATH:task-execution}` §3.7 and auto-picks any queued assignments on the Task Bus. Note queued assignments explicitly when present.
 - *Closing instruction:* Confirm to User that Handoff Log and Stage context have been read, then state readiness.
 
 ---

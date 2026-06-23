@@ -124,6 +124,10 @@ api-docs/
 .claude/
 AGENTS.md
 CLAUDE.md
+.cursor/
+.specify/
+specs/
+
 
 # Test session analysis workspace (temporary copies for analysis)
 test/

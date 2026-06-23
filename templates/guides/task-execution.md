@@ -52,6 +52,33 @@ When receiving a batch of Tasks (multiple Task Prompts in a single Task Bus mess
 
 **Fail-fast:** If any Task results in Failed status, stop the batch. Do not proceed to remaining Tasks. After completing all Tasks (or stopping on failure), write a single batch report to the Report Bus per `{GUIDE_PATH:task-logging}` §4.3 Batch Report Format. Do not defer logging to the end of the batch.
 
+### 2.7 Session Context Assessment Standards
+
+Before every auto-pick attempt — continuing same-turn exhaustion after prior completion or waking from Idle on operator interaction — assess session context utilization. Do not assess mid-assignment during §3.3–§3.5 execution; assess only at Work Queue Check boundaries (§3.7).
+
+**Threshold:** ~75% of estimated session context capacity — best-effort, not exact token count.
+
+Evaluate composite signals; no single signal is required:
+
+| Signal | Threshold indicator |
+|--------|---------------------|
+| Assignments completed this session | ≥3 substantial Tasks with significant file reads/tool use |
+| Correction loops | Multiple debug subagent spawns or extended iteration in session |
+| Conversation length | Very long session with many prior turns and tool calls |
+| Cursor context indicator | UI shows high context usage (when visible to operator/agent) |
+| Operator signals | Operator mentions context limits, compaction, or slowness |
+| Post-handoff early session | Recently handed off — bias toward `low` unless rapid growth |
+
+**Classification:**
+
+| Result | Criteria | Action |
+|--------|----------|--------|
+| `below_threshold` | Estimate clearly under 75% | Proceed with auto-pick |
+| `at_or_above_threshold` | Estimate ≥75% | Stop auto-pick; recommend handoff |
+| `uncertain_high` | Cannot estimate; risk of exceeding | Treat as `at_or_above_threshold` (conservative) |
+
+When uncertain, favor handoff recommendation (conservative default). Recompute before each auto-pick attempt — do not cache across long idle periods.
+
 ---
 
 ## 3. Task Execution Procedure
@@ -107,7 +134,64 @@ Perform the following actions:
 4. Write Task Report per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. Include relevant status indications:
    - *After Handoff.* If this is the first Task after Handoff initialization, include incoming Worker indication: state instance number, list the specific Task Log files loaded, and note that previous-Stage logs were not loaded.
    - *After recovery:* If auto-compaction occurred and recovery was performed via `{COMMAND_SLUG:recover}`, note it in the Task Report so the Manager is aware.
-5. State readiness for the next Task via `{COMMAND_SLUG:task}` (no argument needed - you are already registered). Await the next Task Prompt or Handoff initiation.
+5. Direct the User to deliver the Task Report to the Manager per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. Continue to §3.7 Work Queue Check Procedure.
+
+### 3.7 Work Queue Check Procedure
+
+After Task Completion, automatically check the Task Bus for additional assignments. Continue checking until the queue is empty, a stop condition applies, or auto-polling is disabled.
+
+**Session attributes** (maintain during the session):
+- `polling_enabled`: Whether automatic queue-check is active (default: true after registration; set false when operator stops polling or context threshold triggers)
+- `assignments_completed_this_session`: Count of Tasks completed this session (increment after each §3.6 completion)
+
+Perform the following actions:
+
+1. **Report delivery reminder:** Confirm the User is directed to deliver the latest Task Report to the Manager. If any prior Task Reports from this session remain undelivered, remind the User to deliver those outstanding reports before or alongside proceeding with new work — auto-pickup does not waive report delivery obligations.
+
+2. **Polling gate:** If `polling_enabled` is false, announce that automatic work polling is stopped and await explicit operator instruction to resume. Stop (end turn).
+
+3. **Stop condition evaluation:** Evaluate stop conditions per §3.7.1 before reading the Task Bus. If any apply, handle per §3.7.1 and stop (end turn).
+
+4. **Read Task Bus:** Read `.apm/bus/<agent-slug>/task.md` per `{SKILL_PATH:apm-communication}` §4 Message Bus Protocol.
+
+5. **Branch on Task Bus state:**
+   - **Empty:** Announce idle readiness — state that the Worker is ready for assignments and will automatically check the Task Bus when the User next interacts in this chat. On subsequent operator interactions in this Worker chat, re-enter this procedure (§3.7 step 3 onward) before responding to the User's message. Stop (end turn).
+   - **Invalid content:** Missing frontmatter, empty body, or unparseable structure — surface the error to the operator; do not execute. Stop (end turn).
+   - **Misrouted assignment:** If `agent` in YAML frontmatter does not match registered identity, decline and alert the operator of a routing error. Do not clear the Task Bus; direct the operator to route to the correct Worker. Stop (end turn).
+   - **Populated (valid assignment):** Continue to step 6.
+
+6. **Context threshold assessment:** Assess session context utilization per §2.7 Session Context Assessment Standards before auto-picking. If threshold is met or uncertain-high, handle per §3.7.2 and stop (end turn).
+
+7. **Auto-pick and execute:** Process the assignment per §3.1 Task Prompt Receipt through §3.6 Task Completion (including clearing the Task Bus per bus protocol on receipt). Increment `assignments_completed_this_session`.
+
+8. **Same-turn exhaustion:** After completing step 7, return to step 2 (Work Queue Check loop) without ending the conversation turn — continue until the queue is empty, a stop condition applies, or `polling_enabled` is false.
+
+#### 3.7.1 Stop Conditions
+
+Evaluate in priority order when multiple conditions may apply:
+
+| Priority | Condition | Action |
+|----------|-----------|--------|
+| 1 | Operator initiates Handoff | Follow `{COMMAND_PATH:apm.handoff.worker}`; polling stops until new agent instance |
+| 2 | Operator explicit stop | User says "stop", "wait", "pause polling", or equivalent — set `polling_enabled` false; confirm stopped state and how to resume |
+| 3 | Context threshold met | Handle per §3.7.2 |
+| 4 | Task Failed (batch fail-fast) | Per §2.6 Batch Rules — stop batch; after batch report, queue check may resume unless other stops apply |
+| 5 | Misrouted assignment | Handled at step 5 |
+| 6 | Invalid Task Bus content | Handled at step 5 |
+
+When stopping due to context threshold with unprocessed assignments on the Task Bus, do NOT clear the Task Bus — preserve assignments for the incoming agent after Handoff.
+
+#### 3.7.2 Context Threshold Stop
+
+When session context assessment per §2.7 yields `at_or_above_threshold` or `uncertain_high`:
+1. Do NOT begin additional queued assignments in the current session.
+2. Inform the operator:
+   - Estimated context utilization is high (~75% or uncertain)
+   - Recommend initiating Handoff via `{COMMAND_SLUG:handoff.worker}`
+   - Start a new agent via `{COMMAND_SLUG:work} <agent-id>`
+   - Deliver any outstanding reports to the Manager before or during Handoff
+3. If assignments remain on the Task Bus, state they are preserved for the incoming agent.
+4. Set `polling_enabled` false until new session or operator explicitly re-engages execution.
 
 ---
 
