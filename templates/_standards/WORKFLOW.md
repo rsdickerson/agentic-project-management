@@ -115,7 +115,7 @@ The Message Bus is a file-based communication mechanism in `.apm/bus/`. The Plan
 
 A bus file is either empty (no message present) or contains a message awaiting delivery. Before writing to an outgoing bus file, an agent clears its incoming bus file. This prevents stale messages from accumulating and signals that the previous message was processed. Agents always read a bus file before writing to it to ensure cross-platform file tool compatibility.
 
-Workers read their Task Bus when the User runs `{COMMAND_SLUG:task}` in the Worker's chat, or automatically via the polling script after assignment completion (see `{GUIDE_PATH:task-execution}` §3.7 and `.apm/scripts/poll-task-bus.sh`). The operator stops polling with `.apm/scripts/stop-task-polling.sh`. The Manager reads Report Buses when the User runs `{COMMAND_SLUG:review}`. Both commands accept optional agent identifier arguments for targeted delivery.
+Workers read their Task Bus when the User runs `{COMMAND_SLUG:task}` in the Worker's chat, or automatically via the polling script after assignment completion (see `{GUIDE_PATH:task-execution}` §3.7 and `.apm/scripts/poll-task-bus.sh`). The operator stops Worker polling with `.apm/scripts/stop-task-polling.sh`. The Manager reads Report Buses automatically via Report Queue Check after dispatch (see `{GUIDE_PATH:task-review}` §3.8 and `.apm/scripts/poll-report-bus.sh`), or manually when the User runs `{COMMAND_SLUG:review}`. Both review and task commands accept optional agent identifier arguments for targeted delivery.
 
 When dispatching multiple sequential Tasks to the same Worker, the Manager sends them as a batch in a single Task Bus message. Each Task Prompt within the batch retains its full standalone structure.
 
@@ -123,9 +123,9 @@ When dispatching multiple sequential Tasks to the same Worker, the Manager sends
 
 1. Manager writes a Task Prompt to a Worker's Task Bus and provides the User with specific action guidance - which command to run, in which agent's chat, and whether the Worker needs initialization first.
 2. User runs the indicated command(s) in the Worker's context if the Worker is not yet initialized. For initialized Workers actively polling, no operator action is required — the Worker detects new assignments on the next poll cycle.
-3. Worker executes the Task, writes a Task Log, writes a Task Report to the Report Bus, and directs the User to deliver the report - including the agent identifier for targeted retrieval. After completion, the Worker runs the polling script (`checking for work...`) until the Task Bus has more work or the operator stops polling.
-4. User runs `{COMMAND_SLUG:review}` in the Manager's chat.
-5. Manager reviews the report and log, determines next steps.
+3. Worker executes the Task, writes a Task Log, writes a Task Report to the Report Bus, and directs the User to deliver the report - including the agent identifier for targeted retrieval when Manager report polling is not active. After completion, the Worker runs the polling script (`checking for work...`) until the Task Bus has more work or the operator stops polling.
+4. Manager enters Report Queue Check after dispatch (see `{GUIDE_PATH:task-review}` §3.8) — automatically detecting reports via `poll-report-bus.sh` (`checking for reports...`) until reports arrive or the operator stops polling. When polling is inactive, the User runs `{COMMAND_SLUG:review}` in the Manager's chat as manual fallback.
+5. Manager reviews the report and log, determines next steps, dispatches follow-on Tasks or stops Worker polling, and resumes report checking in the same turn when Workers remain active.
 
 The User is the trigger puller at every boundary - there is no direct agent-to-agent communication. Each agent provides concise, actionable guidance covering only their end of the exchange.
 
@@ -281,6 +281,8 @@ The Worker executes Task instructions, validates results, iterates if needed, lo
 **Runtime:** `guides/task-review.md`, `commands/apm.review.md`
 
 The Manager reviews Worker results, determines review outcomes, modifies planning documents when needed, and updates the Tracker.
+
+**Report polling** - After dispatch, the Manager performs Report Queue Check (see `{GUIDE_PATH:task-review}` §3.8): repeatedly runs `.apm/scripts/poll-report-bus.sh` with `sleep` between empty checks in a same-turn agent loop — not one long-running shell process (Cursor aborts those after ~60 seconds). Polling continues until a report is found, the operator runs `.apm/scripts/stop-report-polling.sh`, or a higher-priority stop condition applies (Handoff, explicit operator stop, context threshold, coordination complete, no active Workers). When a report is found, the Manager processes it in the same turn, dispatches follow-on Tasks or stops Worker polling, and resumes report checking when Workers remain active. `{COMMAND_SLUG:review}` remains available as manual fallback when report polling is inactive.
 
 **Report processing** - The Manager reads the Task Report from the Report Bus. For batch reports, each Task's outcome is processed individually. Unstarted Tasks from a stopped batch re-enter the dispatch pool.
 

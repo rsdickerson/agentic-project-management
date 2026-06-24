@@ -134,7 +134,7 @@ Perform the following actions:
 4. Write Task Report per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. Include relevant status indications:
    - *After Handoff.* If this is the first Task after Handoff initialization, include incoming Worker indication: state instance number, list the specific Task Log files loaded, and note that previous-Stage logs were not loaded.
    - *After recovery:* If auto-compaction occurred and recovery was performed via `{COMMAND_SLUG:recover}`, note it in the Task Report so the Manager is aware.
-5. Direct the User to deliver the Task Report to the Manager per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery.
+5. Direct the User to deliver the Task Report to the Manager per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. When the Manager is actively polling for reports (Report Queue Check per `{GUIDE_PATH:task-review}` §3.8), writing the report to the Report Bus is sufficient — the Manager will detect it automatically; still provide delivery guidance for sessions where polling is inactive.
 6. **MANDATORY — do not end turn:** Immediately continue to §3.7 Work Queue Check Procedure. Run the poll script via the shell tool before sending any closing message. **Do NOT** tell the User you are ready for the next Task, **do NOT** direct the User to run `{COMMAND_SLUG:task}`, and **do NOT** use legacy command names such as `apm-4-check-tasks`.
 
 ### 3.7 Work Queue Check Procedure

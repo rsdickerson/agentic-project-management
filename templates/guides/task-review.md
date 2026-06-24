@@ -100,6 +100,10 @@ After all Tasks in a Stage are Done, assess whether the Stage's deliverables req
 
 **When verification reveals issues:** Determine the appropriate response based on scope. For contained issues you can resolve directly, fix them. For issues requiring focused investigation, dispatch a subagent. For issues requiring Worker-level execution, create a new Task through Plan modification per §2.3 Planning Document Modification Standards. For issues whose scope or direction is unclear, present findings to the User with your assessment and proposed options. When verification requires User judgment or action, present findings and pause.
 
+### 2.9 Non-APM Agent Reports
+
+When a report arrives from an agent not listed in Worker tracking, it is a non-APM agent that joined the session independently. These reports do not follow the standard processing flow - there is no Task Log, no Worker tracking entry, and no dispatch state to update. Assess the report on its own terms: what the agent did, whether it affects planning documents or current dispatch. Add a working note to the Tracker recording the agent's identity and contribution. Inform the User of the findings. If follow-up work is needed, assign it per `{GUIDE_PATH:task-assignment}` §2.7 Non-APM Agent Dispatch.
+
 ### 2.10 Worker Polling Stop Standards
 
 Workers poll the Task Bus after Task Completion until work arrives or polling stops. When you review a Worker's report and that Worker has no further work to pick up, stop polling so the Worker session can end cleanly.
@@ -121,6 +125,68 @@ bash .apm/scripts/stop-task-polling.sh <agent-slug>
 
 Inform the User that polling was stopped for that Worker because no further work is currently assigned. Update Worker tracking Notes (e.g., `polling stopped after review — no Ready Tasks`). When work becomes Ready later, dispatch per `{GUIDE_PATH:task-assignment}` §3.3 — the Worker may need `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` if the session ended after the stop.
 
+### 2.11 Manager Report Polling Stop Standards
+
+Manager report polling is independent of Worker task polling. Stop checking Report Buses when coordination no longer requires automatic detection.
+
+**Stop report polling when ANY of these apply:**
+- Operator initiates Manager Handoff
+- Operator runs `bash .apm/scripts/stop-report-polling.sh` or explicitly stops polling in chat
+- Session context threshold met per §2.12 Manager Session Context Assessment Standards
+- All Stages complete and project completion summary presented
+- After review cycle: no Active Workers in Tracker, no non-empty Report Buses, and all relevant Workers stopped per §2.10
+- Malformed report or missing Task Log that requires operator resolution before continuing (per report scope)
+
+**Do not stop report polling when:**
+- Workers are still Active or have non-empty Report Buses
+- Ready Tasks exist and dispatch will follow in the same turn
+- Operator has not stopped and context threshold is not met — continue the agent-driven poll loop
+- Workers are polling for tasks but reports have not arrived yet (wait state)
+
+**Execution:** Operator stop via terminal:
+
+```bash
+bash .apm/scripts/stop-report-polling.sh
+```
+
+Set `report_polling_enabled` false when stopping. Inform the User how to resume: re-engage coordination via `{COMMAND_SLUG:manage}` dispatch cycle or run `{COMMAND_SLUG:review}` as manual fallback.
+
+### 2.12 Manager Session Context Assessment Standards
+
+Before continuing report polling after a review-dispatch cycle or before starting a new review-dispatch cycle when multiple reports are queued — assess session context utilization. Do not assess mid-review during §3.1–§3.3 Task Review Procedure steps.
+
+**Threshold:** ~75% of estimated session context capacity — best-effort, not exact token count.
+
+Evaluate composite signals; no single signal is required:
+
+| Signal | Threshold indicator |
+|--------|---------------------|
+| Reviews completed this session | ≥5 substantial Task Reviews with log reads and Tracker updates |
+| Investigation load | Multiple subagent spawns for review investigations in session |
+| Parallel coordination | Many Workers active, multiple merge/dispatch cycles in session |
+| Conversation length | Very long session with many prior turns and tool calls |
+| Cursor context indicator | UI shows high context usage (when visible) |
+| Operator signals | Operator mentions context limits, compaction, or slowness |
+| Post-handoff early session | Recently handed off — bias toward `low` unless rapid growth |
+
+**Classification:**
+
+| Result | Criteria | Action |
+|--------|----------|--------|
+| `below_threshold` | Estimate clearly under 75% | Continue report polling |
+| `at_or_above_threshold` | Estimate ≥75% | Stop report polling; recommend Handoff |
+| `uncertain_high` | Cannot estimate; risk of exceeding | Treat as `at_or_above_threshold` (conservative) |
+
+When uncertain, favor Handoff recommendation (conservative default). Recompute before each poll-loop continuation after review-dispatch cycles — do not cache across long idle periods.
+
+**When threshold met:**
+1. Complete current review if in progress.
+2. Do NOT begin additional review-dispatch cycles in the current session.
+3. Inform the User: estimated context is high (~75% or uncertain); recommend Handoff via `{COMMAND_SLUG:handoff.manager}`; start new Manager via `{COMMAND_SLUG:manage}`; unprocessed reports remain on Report Buses.
+4. Set `report_polling_enabled` false.
+5. Run `bash .apm/scripts/stop-report-polling.sh` if poll loop is active.
+6. Do NOT clear unprocessed Report Buses.
+
 ---
 
 ## 3. Task Review Procedure
@@ -129,7 +195,7 @@ Three sequential steps per report (processing, log review, outcome determination
 
 ### 3.1 Report Processing
 
-Execute when User runs `{COMMAND_SLUG:review}` or returns with a Task Report (or batch report) from a Worker.
+Execute when User runs `{COMMAND_SLUG:review}`, when Report Queue Check detects a report per §3.8, or when User returns with a Task Report (or batch report) from a Worker.
 
 Perform the following actions:
 1. Read the report from the Report Bus (`.apm/bus/<agent-slug>/report.md`).
@@ -187,6 +253,80 @@ Perform the following actions:
 2. Assess whether Stage verification is needed per §2.8 Stage Verification Standards. When warranted, verify before proceeding.
 3. Distill working notes per §2.7 Note-Taking Standards: observations with lasting impact on future work become Memory notes in the Index, Stage-specific observations become Stage summary prose. Keep working notes that will be needed in the next Stage. When this review immediately triggers Stage summary (last Task in Stage), observations from this review can be written directly to their destinations rather than first passing through working notes.
 4. Synthesize Stage-level observations and append a Stage summary to the Index per §4.3 Index Format. The Index structure (Memory notes above Stage summaries) enables steps 3 and 4 as a single contiguous edit.
+
+### 3.8 Report Queue Check Procedure
+
+After a dispatch cycle completes, automatically check Report Buses for Worker Task Reports. When reports arrive, process them per §3 Task Review Procedure, dispatch follow-on Tasks or stop Worker polling, and resume checking until stop conditions apply — all in the same coordination turn when possible.
+
+**Session attributes** (maintain during the session):
+- `report_polling_enabled`: Whether automatic Report Bus checking is active (default: true after first dispatch cycle; set false when operator stops, Handoff initiates, context threshold triggers, or coordination completes)
+- `reviews_completed_this_session`: Count of substantial Task Reviews completed this session (increment after each §3 review cycle)
+- `context_estimate`: Best-effort utilization (`low` / `moderate` / `high` / `threshold` / `uncertain`)
+
+**Scripts** (project root, shipped in `.apm/scripts/`):
+- Check once: `bash .apm/scripts/poll-report-bus.sh` (returns `REPORT_FOUND` + slug(s), `STILL_EMPTY`, or `POLLING_STOPPED`)
+- Wait between checks: `sleep ${APM_POLL_INTERVAL:-10}` (separate short shell command)
+- Stop button: `bash .apm/scripts/stop-report-polling.sh`
+
+**Polling model:** The Manager runs the check script and sleep in a **same-turn agent loop** — not one long-running bash process. Cursor aborts shell commands that run longer than ~60 seconds; giving up after a few checks is a procedure violation.
+
+Perform the following actions:
+
+1. **Polling gate:** If `report_polling_enabled` is false, announce that automatic report polling is stopped and await explicit operator instruction to resume (`{COMMAND_SLUG:review}` or next dispatch cycle). Stop (end turn).
+
+2. **Stop condition evaluation:** Evaluate stop conditions per §3.8.1 before polling (except operator stop via stop script, handled during poll). If Handoff is initiated, follow `{COMMAND_PATH:apm.handoff.manager}` and stop. If operator explicitly stops in chat ("stop", "wait", "pause polling", or equivalent), set `report_polling_enabled` false, run `bash .apm/scripts/stop-report-polling.sh` if poll loop is active, confirm stopped state, and stop (end turn).
+
+3. **Start polling loop (agent-driven):** Verify `.apm/scripts/poll-report-bus.sh` exists. If missing, inform the operator that APM must be updated (`apm update` or project-equivalent) to install polling scripts — do not end turn awaiting `{COMMAND_SLUG:review}`.
+
+   Inform the operator that Manager report polling is active and display the stop command:
+
+   ```bash
+   bash .apm/scripts/stop-report-polling.sh
+   ```
+
+   **Repeat** the following until `REPORT_FOUND` or `POLLING_STOPPED` — do not end the turn, do not abort after a time limit or number of empty checks, and do not tell the operator to run `{COMMAND_SLUG:review}` again to resume polling:
+
+   a. Run via shell tool:
+
+   ```bash
+   bash .apm/scripts/poll-report-bus.sh
+   ```
+
+   b. Branch on output:
+   - **`REPORT_FOUND`:** Exit this loop; continue to step 4.
+   - **`POLLING_STOPPED`:** Set `report_polling_enabled` false. Confirm polling was stopped via the stop button and state how to resume (`{COMMAND_SLUG:review}` or re-engage coordination). Stop (end turn).
+   - **`STILL_EMPTY`:** Run a separate short wait, then return to step 3a:
+
+   ```bash
+   sleep ${APM_POLL_INTERVAL:-10}
+   ```
+
+4. **Process reports:** For each non-empty Report Bus discovered (batch-read in a single terminal invocation when multiple), read report content. If the agent is not in Worker tracking, process per §2.9 Non-APM Agent Reports. Otherwise, process each report through §3.1 Report Processing, §3.2 Task Log Review, and §3.3 Review Outcome. If a Task Log is missing or report content is unparseable, surface the error, do not mark the Task Done, and handle per §3.8.1 Priority 7. Clear each processed Report Bus after processing per bus protocol. Increment `reviews_completed_this_session` after each substantial review cycle.
+
+5. **Context threshold assessment:** Assess session context utilization per §2.12 Manager Session Context Assessment Standards. If threshold is met or uncertain-high, handle per §2.12 and stop (end turn) — preserve unprocessed Report Buses.
+
+6. **Review-dispatch-resume loop:** After processing all reports in this cycle:
+   - If Ready Tasks exist, run dispatch assessment and Task Prompt construction per `{GUIDE_PATH:task-assignment}` §3.1–§3.3, then return to step 1 without ending the turn.
+   - For each Worker whose report was processed this cycle with no Ready Tasks and no dispatch this turn, run `bash .apm/scripts/stop-task-polling.sh <agent-slug>` per §2.10 Worker Polling Stop Standards. Inform the User that Worker polling was stopped and that the Worker may need `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` when work becomes Ready later.
+   - If all Stage Tasks are Done and merged, proceed to §3.5 Stage Summary Creation as applicable, then continue assessment.
+   - If no Active Workers remain in Tracker, no non-empty Report Buses exist, and all relevant Workers are stopped: set `report_polling_enabled` false, inform the User that coordination report polling has ended, and stop (end turn).
+   - If Workers are still active or reports may still arrive, return to step 1 without ending the turn.
+
+#### 3.8.1 Stop Conditions
+
+Evaluate in priority order when multiple conditions may apply:
+
+| Priority | Condition | Action |
+|----------|-----------|--------|
+| 1 | Operator initiates Manager Handoff | Follow `{COMMAND_PATH:apm.handoff.manager}`; preserve unprocessed Report Buses |
+| 2 | Operator stop (stop button) | Poll script exits `POLLING_STOPPED`; set `report_polling_enabled` false |
+| 3 | Operator explicit stop (in chat) | Set `report_polling_enabled` false; run stop script if poll active |
+| 4 | Context threshold met | Handle per §2.12; preserve unprocessed Report Buses |
+| 5 | Coordination complete | Project completion summary; no report polling after completion |
+| 6 | No active Workers, no pending reports | Automatic stop after reassessment post-review |
+| 7 | Malformed report / missing Task Log | Surface error; do not mark Done; operator resolves |
+
+When stopping due to context threshold or Handoff with unprocessed reports, do NOT clear Report Buses for unprocessed reports.
 
 ---
 

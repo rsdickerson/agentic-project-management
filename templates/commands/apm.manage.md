@@ -62,13 +62,14 @@ Perform the following actions:
 
 After each review, reassess readiness and continue to dispatch in the same turn when Tasks are Ready without waiting for User input per `{GUIDE_PATH:task-review}` §2.4 Parallel Coordination Standards. Repeat until all Stages complete, User input is needed, User intervenes, or Handoff is needed.
 
-1. **Dispatch:** Run dispatch assessment per `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment, construct and deliver Task Prompt(s) per `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction. Direct User to the Worker(s).
-2. **Await Report:** User runs `{COMMAND_SLUG:task}` in Worker chat(s). Workers execute, validate, log, and write Task Report(s) to Report Bus. User runs `{COMMAND_SLUG:review}` in this chat.
-3. **Review and Continue.** Process the report per `{GUIDE_PATH:task-review}` §3 Task Review Procedure: review the Task Log, investigate further if needed and determine review outcome, modify planning documents if needed, update the Tracker, stop Worker polling when no further work is assigned per `{GUIDE_PATH:task-review}` §2.10. Then in the same turn:
-   - *Tasks Ready:* Continue to step 1.
-   - *No Tasks Ready, Workers active:* Communicate wait state per `{GUIDE_PATH:task-review}` §2.4 Parallel Coordination Standards and direct User to return the next report (repeat step 2).
-   - *Follow-up needed:* Construct refined prompt per `{GUIDE_PATH:task-assignment}` §3.4 Follow-Up Task Prompt Construction (repeat step 2).
-   - *Stage complete:* Stage summary per `{GUIDE_PATH:task-review}` §3.5 Stage Summary Creation, then continue to step 1 for next Stage. If all Stages complete, proceed to §4 Project Completion.
+1. **Dispatch:** Run dispatch assessment per `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment, construct and deliver Task Prompt(s) per `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction. Direct User to the Worker(s) when initialization is required; for initialized Workers actively polling (001), no operator action is required at the task-delivery boundary.
+2. **Report Queue Check:** After dispatch completes, enter Report Queue Check per `{GUIDE_PATH:task-review}` §3.8. The procedure automatically detects Worker reports on the Report Bus, reviews them per Task Review §3, dispatches follow-on Tasks or stops Worker polling per §2.10, and resumes checking until stop conditions apply — without the operator running `{COMMAND_SLUG:review}` at the review boundary.
+3. **Continue coordination.** The Report Queue Check procedure handles review-dispatch-resume in the same turn when possible. When it exits:
+   - *Tasks Ready and dispatched:* The procedure loops back to Report Queue Check automatically.
+   - *No Tasks Ready, Workers active:* The procedure continues polling until reports arrive or stop conditions apply.
+   - *Follow-up needed:* Follow-up Task Prompts are delivered during the review cycle; polling resumes per §3.8.
+   - *Stage complete:* Stage summary per `{GUIDE_PATH:task-review}` §3.5 Stage Summary Creation, then continue dispatch for the next Stage. If all Stages complete, proceed to §4 Project Completion.
+   - *Report polling stopped:* Await operator instruction, Handoff, or manual review via `{COMMAND_SLUG:review}`.
 
 ---
 
@@ -76,9 +77,10 @@ After each review, reassess readiness and continue to dispatch in the same turn 
 
 When all Stages are complete:
 1. Set `completed_at: <datetime>` in the Tracker's YAML frontmatter - its presence marks the project as complete. Get the current datetime from the terminal (e.g., `date -u +%Y-%m-%dT%H:%M:%SZ`) for accuracy.
-2. Review all Stage summaries for overall project outcome.
-3. Present a concise project completion summary: Stages completed, total Tasks executed, Workers involved, per-Stage summaries, notable findings, and final deliverables.
-4. Guide the User through the available next steps. The APM session is complete and its artifacts (Spec, Plan, Tracker, Memory, Task Logs) remain in `.apm/`. If the User wants to start a new APM session or clean up the `.apm/` directory, two optional follow-ups are available:
+2. Ensure `report_polling_enabled` is false — do not resume Report Queue Check after coordination is complete.
+3. Review all Stage summaries for overall project outcome.
+4. Present a concise project completion summary: Stages completed, total Tasks executed, Workers involved, per-Stage summaries, notable findings, and final deliverables.
+5. Guide the User through the available next steps. The APM session is complete and its artifacts (Spec, Plan, Tracker, Memory, Task Logs) remain in `.apm/`. If the User wants to start a new APM session or clean up the `.apm/` directory, two optional follow-ups are available:
    - **Session summary:** `{COMMAND_SLUG:summarize}` produces a structured summary covering decisions made, work completed, and lessons learned. A session summary helps future Planners absorb archived context more efficiently - if the User plans to build on this work later, a summary is worth creating. Run it in a new chat for dedicated context. The summarization agent also offers to help with archival at the end of its procedure.
    - **Archival:** running `apm archive` via the CLI archives the current `.apm/` artifacts into `.apm/archives/` and removes them from the `.apm/` root, leaving it clean for a new APM session. Use `apm archive --name <custom-name>` for a descriptive archive name instead of the default dated one.
    Recommend starting with summarization if the User wants both.
