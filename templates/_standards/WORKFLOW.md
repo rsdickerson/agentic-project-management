@@ -115,19 +115,31 @@ The Message Bus is a file-based communication mechanism in `.apm/bus/`. The Plan
 
 A bus file is either empty (no message present) or contains a message awaiting delivery. Before writing to an outgoing bus file, an agent clears its incoming bus file. This prevents stale messages from accumulating and signals that the previous message was processed. Agents always read a bus file before writing to it to ensure cross-platform file tool compatibility.
 
-Workers read their Task Bus when the User runs `{COMMAND_SLUG:task}` in the Worker's chat, or automatically via the polling script after assignment completion (see `{GUIDE_PATH:task-execution}` §3.7 and `.apm/scripts/poll-task-bus.sh`). The operator stops Worker polling with `.apm/scripts/stop-task-polling.sh`. The Manager reads Report Buses automatically via Report Queue Check after dispatch (see `{GUIDE_PATH:task-review}` §3.8 and `.apm/scripts/poll-report-bus.sh`), or manually when the User runs `{COMMAND_SLUG:review}`. Both review and task commands accept optional agent identifier arguments for targeted delivery.
+Workers read their Task Bus when the User runs `{COMMAND_SLUG:task}` in the Worker's chat (**Manual Mode** primary path). **When Autonomous Mode is active**, initialized Workers enter Work Queue Check after assignment completion (see `{GUIDE_PATH:task-execution}` §3.7 and `.apm/scripts/poll-task-bus.sh`). The operator stops Worker queue checking with `.apm/scripts/stop-task-polling.sh`. The Manager reads Report Buses via `{COMMAND_SLUG:review}` in **Manual Mode**, or enters Report Queue Check after dispatch **when Autonomous Mode is active** (see `{GUIDE_PATH:task-review}` §3.8 and `.apm/scripts/poll-report-bus.sh`). Both review and task commands accept optional agent identifier arguments for targeted delivery.
 
 When dispatching multiple sequential Tasks to the same Worker, the Manager sends them as a batch in a single Task Bus message. Each Task Prompt within the batch retains its full standalone structure.
 
 ### 4.3 Communication Flow
 
-1. Manager writes a Task Prompt to a Worker's Task Bus and provides the User with specific action guidance - which command to run, in which agent's chat, and whether the Worker needs initialization first.
-2. User runs the indicated command(s) in the Worker's context if the Worker is not yet initialized. For initialized Workers actively polling, no operator action is required — the Worker detects new assignments on the next poll cycle.
-3. Worker executes the Task, writes a Task Log, writes a Task Report to the Report Bus, and directs the User to deliver the report - including the agent identifier for targeted retrieval when Manager report polling is not active. After completion, the Worker runs the polling script (`checking for work...`) until the Task Bus has more work or the operator stops polling.
-4. Manager enters Report Queue Check after dispatch (see `{GUIDE_PATH:task-review}` §3.8) — automatically detecting reports via `poll-report-bus.sh` (`checking for reports...`) until reports arrive or the operator stops polling. When polling is inactive, the User runs `{COMMAND_SLUG:review}` in the Manager's chat as manual fallback.
-5. Manager reviews the report and log, determines next steps, dispatches follow-on Tasks or stops Worker polling, and resumes report checking in the same turn when Workers remain active.
+Execution behavior depends on **Execution Mode** (see §7.4). Manual Mode is the default; Autonomous Mode is opt-in.
 
-The User is the trigger puller at every boundary - there is no direct agent-to-agent communication. Each agent provides concise, actionable guidance covering only their end of the exchange.
+**Manual Mode (default):**
+
+1. Manager writes a Task Prompt to a Worker's Task Bus and directs the User to run `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` in the Worker's chat.
+2. User runs the indicated command(s). The Worker executes a single assignment and stops — no Work Queue Check loop.
+3. Worker writes a Task Log and Task Report, directs the User to deliver the report to the Manager.
+4. User runs `{COMMAND_SLUG:review}` in the Manager's chat when the report is ready.
+5. Manager reviews, updates the Tracker, and dispatches follow-on Tasks when Ready.
+
+**When Autonomous Mode is active** (paired loop):
+
+1. Manager writes Task Prompt(s) and enters Report Queue Check (§3.8) after dispatch — no `{COMMAND_SLUG:review}` at the review boundary.
+2. Initialized Workers with active Work Queue Check require no operator action at task delivery — assignments are picked up on the next poll cycle.
+3. Worker completes assignment, writes report; Manager detects via Report Queue Check; review-dispatch-resume continues in the same turn when possible.
+4. Worker enters Work Queue Check (§3.7) after completion — same-turn check/wait/check until next assignment or stop condition.
+5. Operator may stop either loop via stop scripts, Handoff, context threshold, or `{COMMAND_SLUG:autonomous} disable`.
+
+The User remains the session initiator and approval authority. Autonomous Mode removes boundary trigger commands between Tasks; it does not remove User-mediated session startup or key approvals.
 
 ### 4.4 Non-APM Agent Participation
 
@@ -254,7 +266,7 @@ Before dispatching, the Manager checks whether a pending report would unlock Tas
 
 **Per-Task analysis** - For each Task, the Manager synthesizes content from three sources into the Task Prompt: dependency context (familiarity classification, producer Task Log content when applicable, integration guidance), relevant Spec content (design decisions and constraints for this Task, extracted inline), and Plan Task fields (objective, steps, guidance, output, validation criteria). Rules are not included in Task Prompts - Workers read `{RULES_FILE}` directly and the Task Prompt assumes those standards are in effect. Content from planning documents and authoritative sources is embedded directly - the Manager never references the Spec or Plan by path. Content that exists in the codebase (source files, patterns, configurations) is referenced through targeted reading instructions - pointing the Worker to specific files and what to look for rather than embedding file contents. Dependency context depth depends on Worker familiarity with the producer's work. Same-agent dependencies receive light context: recall anchors and file paths. Cross-agent dependencies receive comprehensive context: file reading instructions, output summaries, and integration guidance. After a Worker Handoff, previous-Stage same-agent dependencies become cross-agent because the incoming Worker lacks that working context. For Workers that recovered from auto-compaction, the Manager provides more comprehensive same-agent dependency context since reconstructed context may lack working nuance. The Manager traces dependency chains upstream when ancestors established patterns, schemas, or contracts the current Task must follow.
 
-**Task Prompt construction** - The Manager assembles each Task Prompt as a self-contained document with metadata (Stage, Task, agent identifier, log path, dependency indicator) and a body containing the Task objective, dependency context, detailed instructions, expected output, validation criteria, instruction accuracy guidance, iteration guidance, logging instructions, and reporting instructions. For parallel dispatch, the Task Prompt includes the workspace path where the Worker operates. Workers commit to their assigned branch following conventions from Rules and note the workspace in their Task Log. Workers only commit - the Manager handles branch creation, merging, and cleanup. For each dispatch, the Manager writes to the Worker's Task Bus and directs the User to the Worker's chat with specific action guidance. For uninitialized Workers, the Manager directs the User to create a new chat and initialize with the agent identifier; for initialized Workers actively polling, no operator action is required — the Worker picks up the assignment on the next poll cycle. For batch dispatch, the Manager summarizes what the Worker will receive. For parallel dispatch, the Manager lists each Worker chat with its required action.
+**Task Prompt construction** - The Manager assembles each Task Prompt as a self-contained document with metadata (Stage, Task, agent identifier, log path, dependency indicator) and a body containing the Task objective, dependency context, detailed instructions, expected output, validation criteria, instruction accuracy guidance, iteration guidance, logging instructions, and reporting instructions. For parallel dispatch, the Task Prompt includes the workspace path where the Worker operates. Workers commit to their assigned branch following conventions from Rules and note the workspace in their Task Log. Workers only commit - the Manager handles branch creation, merging, and cleanup. For each dispatch, the Manager writes to the Worker's Task Bus and directs the User per `{GUIDE_PATH:task-assignment}` §2.8 Execution Mode Delivery Standards: in **Manual Mode**, always direct `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}`; **when Autonomous Mode is active**, uninitialized Workers need `{COMMAND_SLUG:work}` once, initialized Workers with active Work Queue Check need no operator action at the boundary. For batch dispatch, the Manager summarizes what the Worker will receive. For parallel dispatch, the Manager lists each Worker with mode-appropriate action.
 
 **Follow-up Task Prompts** - When a Task Review determines retry is needed, the Manager issues a follow-up. The follow-up is a new Task Prompt with objective, instructions, output, and validation refined based on what went wrong. It uses the same log path as the original (the Worker overwrites the previous log) and includes context explaining the issue and required refinement.
 
@@ -264,7 +276,7 @@ Before dispatching, the Manager checks whether a pending report would unlock Tas
 
 The Worker executes Task instructions, validates results, iterates if needed, logs the outcome, and reports back.
 
-**Worker registration** - A Worker binds to an agent identity during initiation by resolving the provided agent identifier against `.apm/bus/` directory names. This identity persists for the duration of the Implementation Phase for this Worker instance. The Task Prompt's agent identifier field is used for cross-validation, not identity binding. After registration, the Worker checks bus state to determine the init path: if the Handoff Bus has content, the Worker is an incoming instance and processes the handoff; if the Task Bus has content (with or without a preceding handoff), the Worker reads the Task Prompt and begins executing immediately; if neither has content, the Worker begins work polling via Work Queue Check and `.apm/scripts/poll-task-bus.sh`.
+**Worker registration** - A Worker binds to an agent identity during initiation by resolving the provided agent identifier against `.apm/bus/` directory names. This identity persists for the duration of the Implementation Phase for this Worker instance. The Task Prompt's agent identifier field is used for cross-validation, not identity binding. After registration, the Worker checks bus state to determine the init path: if the Handoff Bus has content, the Worker is an incoming instance and processes the handoff; if the Task Bus has content (with or without a preceding handoff), the Worker reads the Task Prompt and begins executing immediately; if neither has content, **when Autonomous Mode is active** the Worker enters Work Queue Check (§3.7) for idle monitoring; in **Manual Mode** the Worker announces idle-ready and awaits `{COMMAND_SLUG:task}` or `{COMMAND_SLUG:work}`.
 
 **Execution flow** - The Worker integrates dependency context if present, executes steps sequentially, then validates per the Task Prompt's validation criteria. The Worker validates autonomously first (running checks, verifying outputs), then pauses when criteria require User involvement (judgment or action) - the Worker does not involve the User until autonomous checks pass. When validation fails, the Worker investigates the root cause before attempting a correction - reading error output, tracing the failure, and identifying what specifically went wrong. If the correction does not resolve the issue, the Worker spawns a debug subagent to investigate root causes and iterate on fixes in a fresh context rather than continuing in the main context. The Worker validates the subagent's findings before applying them. When a Task includes subagent steps, the Worker spawns the relevant subagent and integrates findings into execution.
 
@@ -274,7 +286,7 @@ The Worker executes Task instructions, validates results, iterates if needed, lo
 
 **Completion** - After execution, the Worker commits work to the assigned branch following conventions from Rules (if version control is active), writes a Task Log, clears the incoming bus file, writes a Task Report to the Report Bus, and directs the User to deliver the report - providing both the targeted command with agent identifier and the general command, since multiple Workers may finish concurrently. For large Tasks, Workers may commit at logical intermediate points during execution rather than only at completion - each commit follows the conventions from Rules and represents a coherent unit of change.
 
-**Work polling** - After Task Completion, the Worker performs Work Queue Check (see `{GUIDE_PATH:task-execution}` §3.7): repeatedly runs `.apm/scripts/poll-task-bus.sh` with `sleep` between empty checks in a same-turn agent loop — not one long-running shell process (Cursor aborts those after ~60 seconds). Polling continues until work arrives or the operator runs `.apm/scripts/stop-task-polling.sh`. Polling also stops on handoff, explicit operator direction, or a best-effort ~75% session context threshold. `{COMMAND_SLUG:task}` remains available as init trigger and manual fallback but is not required between back-to-back queued assignments for initialized Workers.
+**Work Queue Check (Autonomous Mode)** - **When Autonomous Mode is active**, after Task Completion the Worker performs Work Queue Check (see `{GUIDE_PATH:task-execution}` §3.7): repeatedly runs `.apm/scripts/poll-task-bus.sh` with `sleep` between empty checks in a same-turn agent loop — not one long-running shell process (Cursor aborts those after ~60 seconds). Queue checking continues until work arrives or the operator runs `.apm/scripts/stop-task-polling.sh`. It also stops on Handoff, explicit operator direction, or a best-effort ~75% session context threshold. `{COMMAND_SLUG:task}` remains available as init trigger and Manual Mode fallback but is not required between back-to-back queued assignments for initialized Workers in Autonomous Mode. In **Manual Mode**, the Worker completes a single assignment and stops — Work Queue Check is not entered.
 
 ### 7.3 Task Review
 
@@ -282,7 +294,7 @@ The Worker executes Task instructions, validates results, iterates if needed, lo
 
 The Manager reviews Worker results, determines review outcomes, modifies planning documents when needed, and updates the Tracker.
 
-**Report polling** - After dispatch, the Manager performs Report Queue Check (see `{GUIDE_PATH:task-review}` §3.8): repeatedly runs `.apm/scripts/poll-report-bus.sh` with `sleep` between empty checks in a same-turn agent loop — not one long-running shell process (Cursor aborts those after ~60 seconds). Polling continues until a report is found, the operator runs `.apm/scripts/stop-report-polling.sh`, or a higher-priority stop condition applies (Handoff, explicit operator stop, context threshold, coordination complete, no active Workers). When a report is found, the Manager processes it in the same turn, dispatches follow-on Tasks or stops Worker polling, and resumes report checking when Workers remain active. `{COMMAND_SLUG:review}` remains available as manual fallback when report polling is inactive.
+**Report Queue Check (Autonomous Mode)** - **When Autonomous Mode is active**, after dispatch the Manager performs Report Queue Check (see `{GUIDE_PATH:task-review}` §3.8): repeatedly runs `.apm/scripts/poll-report-bus.sh` with `sleep` between empty checks in a same-turn agent loop — not one long-running shell process (Cursor aborts those after ~60 seconds). Report checking continues until a report is found, the operator runs `.apm/scripts/stop-report-polling.sh`, or a higher-priority stop condition applies (Handoff, explicit operator stop, context threshold, coordination complete, no active Workers). When a report is found, the Manager processes it in the same turn, dispatches follow-on Tasks or stops Worker queue checking when appropriate, and resumes Report Queue Check when Workers remain active. `{COMMAND_SLUG:review}` is the **primary path in Manual Mode** and a fallback when Autonomous Mode has stopped or is inactive.
 
 **Report processing** - The Manager reads the Task Report from the Report Bus. For batch reports, each Task's outcome is processed individually. Unstarted Tasks from a stopped batch re-enter the dispatch pool.
 
@@ -297,6 +309,68 @@ The Manager reviews Worker results, determines review outcomes, modifies plannin
 **Stage verification** - After all Tasks in a Stage complete, the Manager assesses whether the Stage's deliverables require holistic verification before proceeding - based on what the User confirmed during the understanding summary, observations accumulated during Task Reviews, and Planner notes. When verification is needed, the Manager executes checks and examines the deliverables. When verification reveals issues, the Manager responds based on scope: fixing contained issues directly, dispatching a subagent for focused investigation, creating a new Task through Plan modification for Worker-level work, or presenting findings to the User when the direction is unclear.
 
 **Stage summary** - After all Tasks in a Stage complete and any verification concludes, the Manager reviews the Stage's Task Logs and appends a Stage summary to the Index capturing Stage-level outcomes, agents involved, notable findings, and references to individual logs.
+
+### 7.4 Execution Modes
+
+**Runtime:** `{SKILL_PATH:apm-autonomous}`, `{COMMAND_PATH:apm.autonomous}`, `.cursor/rules/apm-autonomous.mdc`
+
+APM supports two **Execution Modes** — a single mental model for how Manager and Worker coordinate at task-delivery and review boundaries. Worker Work Queue Check (§3.7) and Manager Report Queue Check (§3.8) operate as an **inseparable pair** in Autonomous Mode, not independent toggles.
+
+#### Manual Mode (Default)
+
+| Aspect | Behavior |
+|--------|----------|
+| Activation | Default when `.cursor/rules/apm-autonomous.mdc` is absent |
+| Manager after dispatch | Instruct operator to run `{COMMAND_SLUG:review}` |
+| Worker after completion | Single assignment; next work via `{COMMAND_SLUG:task}` or `{COMMAND_SLUG:work}` |
+| §3.7 / §3.8 | **Not entered** |
+| Operator control | Step-by-step at review and task-delivery boundaries |
+
+#### Autonomous Mode (Opt-In)
+
+| Aspect | Behavior |
+|--------|----------|
+| Activation | Install `apm-autonomous` rule or run `{COMMAND_SLUG:autonomous} enable` |
+| Manager after dispatch | Enter Report Queue Check (§3.8) automatically |
+| Worker after completion | Enter Work Queue Check (§3.7) automatically |
+| §3.7 / §3.8 | **Both active** as paired system |
+| Operator control | Stop scripts, Handoff, `{COMMAND_SLUG:autonomous} disable`; no boundary commands between Tasks |
+
+#### Command Roles by Mode
+
+| Command | Manual Mode | Autonomous Mode |
+|---------|-------------|-----------------|
+| `{COMMAND_SLUG:manage}` | Dispatch + manual review instruction | Dispatch + Report Queue Check |
+| `{COMMAND_SLUG:work}` | Single assignment execution | Execution + Work Queue Check |
+| `{COMMAND_SLUG:review}` | **Primary** review path | Fallback when autonomous stopped |
+| `{COMMAND_SLUG:task}` | **Primary** next-task delivery | Fallback / init trigger |
+| `{COMMAND_SLUG:autonomous}` | Enable Autonomous Mode | Disable or show status |
+
+#### Mode Detection and Coupling
+
+Sessions read `.cursor/rules/apm-autonomous.mdc` at init and at §3.7 / §3.8 entry. If the rule is absent, Manual Mode applies. If Autonomous Mode is requested but only one role participates (mode mismatch), agents fall back to Manual Mode with an operator message — partial autonomous loops are invalid.
+
+#### Stop Conditions (Autonomous Mode)
+
+When Autonomous Mode is active, these stops end the autonomous session (inherited from features 001/002, not weakened):
+
+| Stop | Worker | Manager |
+|------|--------|---------|
+| No active Workers + no pending reports | N/A | Stop §3.8 |
+| Context threshold (~75%) | Stop §3.7; recommend Handoff | Stop §3.8; recommend Handoff |
+| Operator Handoff | Follow Handoff guide | Follow Handoff guide |
+| Explicit operator stop | `stop-task-polling.sh` | `stop-report-polling.sh` |
+| Fail-fast batch failure | Per batch rules | Per review outcome |
+
+An empty Task Bus or Report Bus alone is **not** a stop condition — agents use same-turn check/wait/check while queue checking remains active.
+
+#### Autonomous Session End
+
+When autonomous coordination stops, both roles emit guidance to re-enable Autonomous Mode (`{COMMAND_SLUG:manage}` / `{COMMAND_SLUG:work}` after restoring the rule) or switch to manual coordination (`{COMMAND_SLUG:review}`, `{COMMAND_SLUG:task}`, `{COMMAND_SLUG:work}`). Bus content and Tracker state are preserved.
+
+#### Pre-Gate Behavior (FR-018)
+
+Features 001 and 002 introduced Work Queue Check and Report Queue Check before Autonomous Mode gating existed. Gate templates add conditional entry: **Manual Mode is default after gates ship**; poll scripts and loop semantics are unchanged when Autonomous Mode is active.
 
 ---
 

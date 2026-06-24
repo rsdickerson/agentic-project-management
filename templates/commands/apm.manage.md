@@ -65,14 +65,14 @@ After each review, reassess readiness and continue to dispatch in the same turn 
 
 1. **Dispatch:** Run dispatch assessment per `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment, construct and deliver Task Prompt(s) per `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction. Direct User to the Worker(s) when initialization is required; for initialized Workers in Autonomous Mode, no operator action is required at the task-delivery boundary.
 2. **Report checking (Execution Mode branch):** Run `{GUIDE_PATH:task-review}` §2.13 Execution Mode Detection if not yet run this session. Then:
-   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Enter Report Queue Check per `{GUIDE_PATH:task-review}` §3.8. Set `report_polling_enabled = true`. The procedure automatically detects Worker reports on the Report Bus, reviews them per Task Review §3, dispatches follow-on Tasks or stops Worker polling per §2.10, and resumes checking until stop conditions apply — without the operator running `{COMMAND_SLUG:review}` at the review boundary.
+   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Enter Report Queue Check per `{GUIDE_PATH:task-review}` §3.8. Set `report_polling_enabled = true`. When Autonomous Mode is active, the procedure detects Worker reports on the Report Bus, reviews them per Task Review §3, dispatches follow-on Tasks or stops Worker queue checking per §2.10, and resumes checking until stop conditions apply — without the operator running `{COMMAND_SLUG:review}` at the review boundary.
    - **ELSE (Manual Mode — default, FR-003):** Instruct the operator to run `{COMMAND_SLUG:review}` when Worker reports are delivered. Set `report_polling_enabled = false`. **Do not** enter Report Queue Check (§3.8). **Do not** run the report poll script. Stop coordination turn (end turn) after dispatch unless other same-turn work remains.
 3. **Continue coordination (Autonomous Mode only).** When §3.8 was entered, the Report Queue Check procedure handles review-dispatch-resume in the same turn when possible. When it exits:
-   - *Tasks Ready and dispatched:* The procedure loops back to Report Queue Check automatically.
-   - *No Tasks Ready, Workers active:* The procedure continues polling until reports arrive or stop conditions apply.
-   - *Follow-up needed:* Follow-up Task Prompts are delivered during the review cycle; polling resumes per §3.8.
+   - *Tasks Ready and dispatched:* The procedure loops back to Report Queue Check.
+   - *No Tasks Ready, Workers active:* When Autonomous Mode is active, Report Queue Check continues until reports arrive or stop conditions apply.
+   - *Follow-up needed:* Follow-up Task Prompts are delivered during the review cycle; when Autonomous Mode is active, Report Queue Check resumes per §3.8.
    - *Stage complete:* Stage summary per `{GUIDE_PATH:task-review}` §3.5 Stage Summary Creation, then continue dispatch for the next Stage. If all Stages complete, proceed to §4 Project Completion.
-   - *Report polling stopped:* Await operator instruction, Handoff, or manual review via `{COMMAND_SLUG:review}`.
+   - *Report Queue Check stopped:* Await operator instruction, Handoff, or manual review via `{COMMAND_SLUG:review}`.
 
 ---
 

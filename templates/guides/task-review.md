@@ -104,11 +104,11 @@ After all Tasks in a Stage are Done, assess whether the Stage's deliverables req
 
 When a report arrives from an agent not listed in Worker tracking, it is a non-APM agent that joined the session independently. These reports do not follow the standard processing flow - there is no Task Log, no Worker tracking entry, and no dispatch state to update. Assess the report on its own terms: what the agent did, whether it affects planning documents or current dispatch. Add a working note to the Tracker recording the agent's identity and contribution. Inform the User of the findings. If follow-up work is needed, assign it per `{GUIDE_PATH:task-assignment}` §2.7 Non-APM Agent Dispatch.
 
-### 2.10 Worker Polling Stop Standards
+### 2.10 Worker Queue Check Stop Standards
 
-Workers poll the Task Bus after Task Completion until work arrives or polling stops. When you review a Worker's report and that Worker has no further work to pick up, stop polling so the Worker session can end cleanly.
+When Autonomous Mode is active, Workers enter Work Queue Check (§3.7) after Task Completion until work arrives or queue checking stops. When you review a Worker's report and that Worker has no further work to pick up, stop queue checking so the Worker session can end cleanly.
 
-**Stop polling when ALL are true** (for each Worker whose report was processed in the current review cycle):
+**Stop queue checking when ALL are true** (for each Worker whose report was processed in the current review cycle):
 - No `Ready` Tasks assigned to that Worker in the Tracker (after reassessment)
 - You are not writing a Task Prompt or follow-up to that Worker's Task Bus in this review-dispatch turn
 - That Worker has no `Active` Task in the Tracker
@@ -123,13 +123,13 @@ Workers poll the Task Bus after Task Completion until work arrives or polling st
 bash .apm/scripts/stop-task-polling.sh <agent-slug>
 ```
 
-Inform the User that polling was stopped for that Worker because no further work is currently assigned. Update Worker tracking Notes (e.g., `polling stopped after review — no Ready Tasks`). When work becomes Ready later, dispatch per `{GUIDE_PATH:task-assignment}` §3.3 — the Worker may need `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` if the session ended after the stop.
+Inform the User that Work Queue Check was stopped for that Worker because no further work is currently assigned. Update Worker tracking Notes (e.g., `queue check stopped after review — no Ready Tasks`). When work becomes Ready later, dispatch per `{GUIDE_PATH:task-assignment}` §3.3 — the Worker may need `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` if the session ended after the stop.
 
-### 2.11 Manager Report Polling Stop Standards
+### 2.11 Manager Report Queue Check Stop Standards
 
-Manager report polling is independent of Worker task polling. Stop checking Report Buses when coordination no longer requires automatic detection.
+When Autonomous Mode is active, Manager Report Queue Check (§3.8) is independent of Worker Work Queue Check (§3.7). Stop checking Report Buses when coordination no longer requires automatic detection.
 
-**Stop report polling when ANY of these apply:**
+**Stop Report Queue Check when ANY of these apply:**
 - Operator initiates Manager Handoff
 - Operator runs `bash .apm/scripts/stop-report-polling.sh` or explicitly stops polling in chat
 - Session context threshold met per §2.12 Manager Session Context Assessment Standards
@@ -137,7 +137,7 @@ Manager report polling is independent of Worker task polling. Stop checking Repo
 - After review cycle: no Active Workers in Tracker, no non-empty Report Buses, and all relevant Workers stopped per §2.10
 - Malformed report or missing Task Log that requires operator resolution before continuing (per report scope)
 
-**Do not stop report polling when:**
+**Do not stop Report Queue Check when:**
 - Workers are still Active or have non-empty Report Buses
 - Ready Tasks exist and dispatch will follow in the same turn
 - Operator has not stopped and context threshold is not met — continue the agent-driven poll loop
@@ -149,7 +149,7 @@ Manager report polling is independent of Worker task polling. Stop checking Repo
 bash .apm/scripts/stop-report-polling.sh
 ```
 
-Set `report_polling_enabled` false when stopping. Emit §3.8.2 Autonomous Session End Message when stopping from an active autonomous report poll loop. Inform the User how to resume: re-enable Autonomous Mode and re-engage coordination via `{COMMAND_SLUG:manage}`, or run `{COMMAND_SLUG:review}` as manual fallback.
+Set `report_polling_enabled` false when stopping. Emit §3.8.2 Autonomous Session End Message when stopping from an active Report Queue Check loop under Autonomous Mode. Inform the User how to resume: re-enable Autonomous Mode and re-engage coordination via `{COMMAND_SLUG:manage}`, or run `{COMMAND_SLUG:review}` as Manual Mode fallback.
 
 ### 2.12 Manager Session Context Assessment Standards
 
@@ -173,8 +173,8 @@ Evaluate composite signals; no single signal is required:
 
 | Result | Criteria | Action |
 |--------|----------|--------|
-| `below_threshold` | Estimate clearly under 75% | Continue report polling |
-| `at_or_above_threshold` | Estimate ≥75% | Stop report polling; recommend Handoff |
+| `below_threshold` | Estimate clearly under 75% | Continue Report Queue Check |
+| `at_or_above_threshold` | Estimate ≥75% | Stop Report Queue Check; recommend Handoff |
 | `uncertain_high` | Cannot estimate; risk of exceeding | Treat as `at_or_above_threshold` (conservative) |
 
 When uncertain, favor Handoff recommendation (conservative default). Recompute before each poll-loop continuation after review-dispatch cycles — do not cache across long idle periods.
@@ -331,13 +331,13 @@ Perform the following actions:
 
    *This step runs once per §3.8 entry — not on step 6 loop-back.*
 
-1. **Polling gate:** If `report_polling_enabled` is false, announce that automatic report polling is stopped. If polling was previously active this session, emit §3.8.2 Autonomous Session End Message. Await explicit operator instruction to resume (`{COMMAND_SLUG:review}` or next dispatch cycle). Stop (end turn).
+1. **Polling gate:** If `report_polling_enabled` is false, announce that Report Queue Check (§3.8) is stopped. If queue checking was previously active this session under Autonomous Mode, emit §3.8.2 Autonomous Session End Message. Await explicit operator instruction to resume (`{COMMAND_SLUG:review}` or next dispatch cycle). Stop (end turn).
 
 2. **Stop condition evaluation:** Evaluate stop conditions per §3.8.1 before polling (except operator stop via stop script, handled during poll). If Handoff is initiated, follow `{COMMAND_PATH:apm.handoff.manager}`, set `report_polling_enabled` false, emit §3.8.2 Autonomous Session End Message, and stop. If operator explicitly stops in chat ("stop", "wait", "pause polling", or equivalent), set `report_polling_enabled` false, run `bash .apm/scripts/stop-report-polling.sh` if poll loop is active, emit §3.8.2 Autonomous Session End Message, confirm stopped state, and stop (end turn).
 
 3. **Start polling loop (agent-driven):** Verify `.apm/scripts/poll-report-bus.sh` exists. If missing, inform the operator that APM must be updated (`apm update` or project-equivalent) to install polling scripts — do not end turn awaiting `{COMMAND_SLUG:review}`.
 
-   Inform the operator that Manager report polling is active and display the stop command:
+   When Autonomous Mode is active, inform the operator that Report Queue Check is active and display the stop command:
 
    ```bash
    bash .apm/scripts/stop-report-polling.sh

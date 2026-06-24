@@ -179,7 +179,7 @@ Perform the following actions:
 4. Write Task Report per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. Include relevant status indications:
    - *After Handoff.* If this is the first Task after Handoff initialization, include incoming Worker indication: state instance number, list the specific Task Log files loaded, and note that previous-Stage logs were not loaded.
    - *After recovery:* If auto-compaction occurred and recovery was performed via `{COMMAND_SLUG:recover}`, note it in the Task Report so the Manager is aware.
-5. Direct the User to deliver the Task Report to the Manager per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. When the Manager is actively polling for reports (Report Queue Check per `{GUIDE_PATH:task-review}` §3.8), writing the report to the Report Bus is sufficient — the Manager will detect it automatically; still provide delivery guidance for sessions where polling is inactive.
+5. Direct the User to deliver the Task Report to the Manager per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. When Autonomous Mode is active and the Manager is in Report Queue Check (`{GUIDE_PATH:task-review}` §3.8), writing the report to the Report Bus is sufficient — the Manager will detect it; still provide delivery guidance for Manual Mode or when queue checking is inactive.
 6. **Continue to Work Queue Check:** Proceed to §3.7 Work Queue Check Procedure. §3.7 step 0 Autonomous Mode gate determines whether polling runs or Manual Mode exit applies — when Autonomous Mode is active, run the poll script before sending any closing message; when Manual Mode, stop after delivery guidance per §3.7 step 0.
 
 ### 3.7 Work Queue Check Procedure
@@ -207,13 +207,13 @@ Perform the following actions:
 
 1. **Report delivery reminder:** Confirm the User is directed to deliver the latest Task Report to the Manager. If any prior Task Reports from this session remain undelivered, remind the User to deliver those outstanding reports before or alongside proceeding with new work — auto-pickup does not waive report delivery obligations.
 
-2. **Polling gate:** If `polling_enabled` is false, announce that automatic work polling is stopped. If polling was previously active this session, emit §3.7.3 Autonomous Session End Message. Await explicit operator instruction to resume. Stop (end turn).
+2. **Polling gate:** If `polling_enabled` is false, announce that Work Queue Check (§3.7) is stopped. If queue checking was previously active this session under Autonomous Mode, emit §3.7.3 Autonomous Session End Message. Await explicit operator instruction to resume. Stop (end turn).
 
 3. **Stop condition evaluation:** Evaluate stop conditions per §3.7.1 before polling. If any apply (except operator stop via stop script, handled during poll), handle per §3.7.1 and stop (end turn).
 
 4. **Start polling loop (agent-driven):** Verify `.apm/scripts/poll-task-bus.sh` exists. If missing, inform the operator that APM must be updated (`apm update` or project-equivalent) to install polling scripts — do not end turn awaiting `{COMMAND_SLUG:task}`.
 
-   Remove any stale stop signal at `.apm/bus/<agent-slug>/polling.stop` if present. Inform the operator that work polling is active and display the stop command:
+   Remove any stale stop signal at `.apm/bus/<agent-slug>/polling.stop` if present. When Autonomous Mode is active, inform the operator that Work Queue Check is active and display the stop command:
 
    ```bash
    bash .apm/scripts/stop-task-polling.sh <agent-slug>

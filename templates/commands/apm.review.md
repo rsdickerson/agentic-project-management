@@ -7,9 +7,9 @@ description: Review Task Reports from the Report Bus.
 
 Review Task Reports from Worker Report Buses. If you are a Planner, Worker, or non-APM agent, concisely decline and take no action.
 
-**Primary Manual Mode path (FR-008):** When Autonomous Mode is inactive (default), this command is the **primary** review path at the review boundary. After dispatch, the Manager instructs the operator to run `{COMMAND_SLUG:review}` — the Manager does not enter automatic report checking per `{GUIDE_PATH:task-review}` §3.8.
+**Primary Manual Mode path (FR-008):** When Autonomous Mode is inactive (default), this command is the **primary** review path at the review boundary. After dispatch, the Manager instructs the operator to run `{COMMAND_SLUG:review}` — the Manager does not enter Report Queue Check (§3.8).
 
-**Autonomous Mode fallback:** When Autonomous Mode is active, reports are detected automatically via `{GUIDE_PATH:task-review}` §3.8 Report Queue Check Procedure and this command is not required at the review boundary. Use this command when autonomous report polling is inactive — after polling was stopped, in a new Manager session before dispatch resumes polling, when Autonomous Mode has ended, or when the operator wants explicit control at any review boundary.
+**Autonomous Mode fallback:** When Autonomous Mode is active, reports are detected via Report Queue Check (`{GUIDE_PATH:task-review}` §3.8) and this command is not required at the review boundary. Use this command when Autonomous Mode has stopped or is inactive — after queue checking was stopped, in a new Manager session before dispatch resumes §3.8, when Autonomous Mode has ended, or when the operator wants explicit control at any review boundary.
 
 Accepts optional `[agent-id ...]` arguments. With arguments, checks those Workers' Report Buses. Without arguments, checks Workers with active dispatches plus a health check for unexpected content.
 
