@@ -100,9 +100,26 @@ After all Tasks in a Stage are Done, assess whether the Stage's deliverables req
 
 **When verification reveals issues:** Determine the appropriate response based on scope. For contained issues you can resolve directly, fix them. For issues requiring focused investigation, dispatch a subagent. For issues requiring Worker-level execution, create a new Task through Plan modification per §2.3 Planning Document Modification Standards. For issues whose scope or direction is unclear, present findings to the User with your assessment and proposed options. When verification requires User judgment or action, present findings and pause.
 
-### 2.9 Non-APM Agent Reports
+### 2.10 Worker Polling Stop Standards
 
-When a report arrives from an agent not listed in Worker tracking, it is a non-APM agent that joined the session independently. These reports do not follow the standard processing flow - there is no Task Log, no Worker tracking entry, and no dispatch state to update. Assess the report on its own terms: what the agent did, whether it affects planning documents or current dispatch. Add a working note to the Tracker recording the agent's identity and contribution. Inform the User of the findings. If follow-up work is needed, assign it per `{GUIDE_PATH:task-assignment}` §2.7 Non-APM Agent Dispatch.
+Workers poll the Task Bus after Task Completion until work arrives or polling stops. When you review a Worker's report and that Worker has no further work to pick up, stop polling so the Worker session can end cleanly.
+
+**Stop polling when ALL are true** (for each Worker whose report was processed in the current review cycle):
+- No `Ready` Tasks assigned to that Worker in the Tracker (after reassessment)
+- You are not writing a Task Prompt or follow-up to that Worker's Task Bus in this review-dispatch turn
+- That Worker has no `Active` Task in the Tracker
+
+**Do not stop when:**
+- You dispatch or write a follow-up to that Worker in this turn (Task Bus will be populated)
+- `Ready` Tasks remain assigned to that Worker (work exists — dispatch instead, or leave polling active until the Task Bus is populated)
+
+**Execution:** Run via terminal:
+
+```bash
+bash .apm/scripts/stop-task-polling.sh <agent-slug>
+```
+
+Inform the User that polling was stopped for that Worker because no further work is currently assigned. Update Worker tracking Notes (e.g., `polling stopped after review — no Ready Tasks`). When work becomes Ready later, dispatch per `{GUIDE_PATH:task-assignment}` §3.3 — the Worker may need `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` if the session ended after the stop.
 
 ---
 
@@ -144,8 +161,9 @@ Perform the following actions:
 3. Update the Tracker per §4.1 Task Tracking Format: mark completed Tasks as Done, reassess Waiting Tasks for readiness, update branches. Execute pending merges per §2.5 Merge Standards before reassessing readiness. Assess whether the review yielded note-worthy context and add to working notes - both ephemeral coordination items and durable observations for later distillation. Remove stale working notes. Batch all changes from this review-dispatch cycle into a single Tracker edit.
 4. Assess next action per §2.4 Parallel Coordination Standards:
    - If all Stage Tasks are Done and merged, collapse Stage per §4.1 Task Tracking Format and proceed to §3.5 Stage Summary Creation.
-   - If Tasks are Ready, proceed to `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment in the same turn.
+   - If Tasks are Ready, proceed to `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment in the same turn. Track which Workers receive a Task Prompt or follow-up in this turn.
    - If no Tasks are Ready but Workers are active, communicate wait state per §2.4 Parallel Coordination Standards and direct User to return the next report.
+5. **Stop Worker polling** per §2.10 Worker Polling Stop Standards: for each Worker whose report was processed in this cycle, if that Worker received no dispatch this turn and has no Ready Tasks, run `bash .apm/scripts/stop-task-polling.sh <agent-slug>` and update Worker tracking Notes.
 
 ### 3.4 Planning Document Modification
 

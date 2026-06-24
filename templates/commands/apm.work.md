@@ -31,7 +31,7 @@ Determine identity from the `{ARGS}` argument:
 3. Verify bus files exist (`task.md`, `report.md`, `handoff.md`) in the bus directory. Determine your init path from bus state:
    - If Handoff Bus has content, you are an incoming Worker after Handoff. Proceed to §2.2 Incoming Worker Initiation.
    - If Handoff Bus is empty and Task Bus has content, confirm identity to User and proceed to §3 Task Execution Loop.
-   - If both are empty, confirm identity to User and enter idle state via `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure.
+   - If both are empty, confirm identity to User and begin work polling via `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure.
 
 ### 2.2 Incoming Worker Initiation
 
@@ -42,21 +42,27 @@ Perform the following actions:
 4. Confirm Handoff to User: state instance number, logs loaded, readiness to continue. When previous Stages exist, note which specific Task Logs were loaded and which were not, explaining that previous-Stage logs were not loaded for efficiency.
 5. Check Task Bus:
    - If Task Bus has content, the handoff prompt describes a mid-Task or mid-batch continuation. Proceed to §3 Task Execution Loop.
-   - If Task Bus is empty, enter idle state via `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure.
+   - If Task Bus is empty, begin work polling via `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure.
 
 ---
 
 ## 3. Task Execution Loop
 
 When a Task Prompt is available (detected during init, auto-picked from Task Bus, or delivered via `{COMMAND_SLUG:task}`):
-1. **Execute:** See `{GUIDE_PATH:task-execution}` §3 Task Execution Procedure. The guide controls validation, execution, and completion.
-2. **Log:** Create Task Log per `{GUIDE_PATH:task-logging}` §3 Task Logging Procedure.
-3. **Report:** Write Task Report per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery.
-4. **Work Queue Check:** After completion, perform `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure — automatically check for additional assignments, continue same-turn when queued work exists, or enter idle state when the queue is empty.
+1. **Execute through completion:** See `{GUIDE_PATH:task-execution}` §3 Task Execution Procedure through §3.6 Task Completion (includes logging and reporting per `{GUIDE_PATH:task-logging}`).
+2. **Poll for more work (mandatory):** Without ending the turn, execute `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure. When the Task Bus is empty, repeat this **agent-driven loop** (short shell calls — not one long-running process):
 
-Repeat until all assigned Tasks are Done, User intervenes, Handoff is needed, or a stop condition halts auto-polling.
+   ```bash
+   bash .apm/scripts/poll-task-bus.sh <agent-slug>
+   ```
 
-**Operator interaction wake:** When idle after Work Queue Check, re-enter `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure at the start of any subsequent operator interaction in this chat — before responding to the operator's message.
+   If output is `STILL_EMPTY`, run `sleep ${APM_POLL_INTERVAL:-10}` and call the check script again. Continue until `WORK_FOUND` or `POLLING_STOPPED`. **Do not give up** after a time limit or number of empty checks. **Do not** tell the User to run `{COMMAND_SLUG:work}` again to resume polling.
+
+3. **On WORK_FOUND:** Process the new assignment (return to step 1). Same-turn exhaustion continues until polling stops or a stop condition applies.
+
+**Prohibited after Task Completion:** Do not end the turn telling the User to run `{COMMAND_SLUG:task}`, `apm-4-check-tasks`, or `{COMMAND_SLUG:work}` to resume waiting. Do not report that polling was "aborted" and stop — keep looping until work arrives or the operator uses the stop button.
+
+**Stop button:** While polling, the operator can stop the loop by running `bash .apm/scripts/stop-task-polling.sh <agent-slug>` in a terminal.
 
 ---
 
@@ -73,6 +79,7 @@ Handoff is User-initiated when context window limits approach.
 - After registration, only accept Tasks assigned to your registered agent identifier. When receiving an assignment for a different agent identifier, decline and direct User to the correct Worker.
 - **Primary role:** Task execution - not coordination or planning. Work only from your Task Prompt, Rules, and accumulated working context. Do not reference any planning or coordination documents - your Task Prompt is self-contained and contains everything you need. Do not reason about or report on project structure beyond your assigned Tasks - other agents' work, Stage progress, and overall project state are outside your scope unless explicitly referenced in your Task Prompt. If User explicitly requests actions outside normal scope, comply.
 - Read only the APM documents listed in §2 Initiation. Do not read other agents' guides, commands, or APM procedural documents beyond those listed and their internal cross-references.
+- After every Task Completion, run work polling per §3 step 2 before ending the turn. Never substitute "ready for next Task via `{COMMAND_SLUG:task}`" or legacy command names for the poll script.
 
 ---
 

@@ -64,7 +64,7 @@ After each review, reassess readiness and continue to dispatch in the same turn 
 
 1. **Dispatch:** Run dispatch assessment per `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment, construct and deliver Task Prompt(s) per `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction. Direct User to the Worker(s).
 2. **Await Report:** User runs `{COMMAND_SLUG:task}` in Worker chat(s). Workers execute, validate, log, and write Task Report(s) to Report Bus. User runs `{COMMAND_SLUG:review}` in this chat.
-3. **Review and Continue.** Process the report per `{GUIDE_PATH:task-review}` §3 Task Review Procedure: review the Task Log, investigate further if needed and determine review outcome, modify planning documents if needed, update the Tracker. Then in the same turn:
+3. **Review and Continue.** Process the report per `{GUIDE_PATH:task-review}` §3 Task Review Procedure: review the Task Log, investigate further if needed and determine review outcome, modify planning documents if needed, update the Tracker, stop Worker polling when no further work is assigned per `{GUIDE_PATH:task-review}` §2.10. Then in the same turn:
    - *Tasks Ready:* Continue to step 1.
    - *No Tasks Ready, Workers active:* Communicate wait state per `{GUIDE_PATH:task-review}` §2.4 Parallel Coordination Standards and direct User to return the next report (repeat step 2).
    - *Follow-up needed:* Construct refined prompt per `{GUIDE_PATH:task-assignment}` §3.4 Follow-Up Task Prompt Construction (repeat step 2).

@@ -54,7 +54,7 @@ When receiving a batch of Tasks (multiple Task Prompts in a single Task Bus mess
 
 ### 2.7 Session Context Assessment Standards
 
-Before every auto-pick attempt — continuing same-turn exhaustion after prior completion or waking from Idle on operator interaction — assess session context utilization. Do not assess mid-assignment during §3.3–§3.5 execution; assess only at Work Queue Check boundaries (§3.7).
+Before every auto-pick attempt — continuing same-turn exhaustion after prior completion or when the poll script returns `WORK_FOUND` — assess session context utilization. Do not assess mid-assignment during §3.3–§3.5 execution; assess only at Work Queue Check boundaries (§3.7).
 
 **Threshold:** ~75% of estimated session context capacity — best-effort, not exact token count.
 
@@ -134,15 +134,23 @@ Perform the following actions:
 4. Write Task Report per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. Include relevant status indications:
    - *After Handoff.* If this is the first Task after Handoff initialization, include incoming Worker indication: state instance number, list the specific Task Log files loaded, and note that previous-Stage logs were not loaded.
    - *After recovery:* If auto-compaction occurred and recovery was performed via `{COMMAND_SLUG:recover}`, note it in the Task Report so the Manager is aware.
-5. Direct the User to deliver the Task Report to the Manager per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. Continue to §3.7 Work Queue Check Procedure.
+5. Direct the User to deliver the Task Report to the Manager per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery.
+6. **MANDATORY — do not end turn:** Immediately continue to §3.7 Work Queue Check Procedure. Run the poll script via the shell tool before sending any closing message. **Do NOT** tell the User you are ready for the next Task, **do NOT** direct the User to run `{COMMAND_SLUG:task}`, and **do NOT** use legacy command names such as `apm-4-check-tasks`.
 
 ### 3.7 Work Queue Check Procedure
 
-After Task Completion, automatically check the Task Bus for additional assignments. Continue checking until the queue is empty, a stop condition applies, or auto-polling is disabled.
+After Task Completion, automatically check the Task Bus for additional assignments. When the queue is empty, run the polling script in a loop until work arrives, polling is stopped, or a higher-priority stop condition applies.
 
 **Session attributes** (maintain during the session):
 - `polling_enabled`: Whether automatic queue-check is active (default: true after registration; set false when operator stops polling or context threshold triggers)
 - `assignments_completed_this_session`: Count of Tasks completed this session (increment after each §3.6 completion)
+
+**Scripts** (project root, shipped in `.apm/scripts/`):
+- Check once: `bash .apm/scripts/poll-task-bus.sh <agent-slug>` (returns `WORK_FOUND`, `STILL_EMPTY`, or `POLLING_STOPPED`)
+- Wait between checks: `sleep ${APM_POLL_INTERVAL:-10}` (separate short shell command)
+- Stop button: `bash .apm/scripts/stop-task-polling.sh <agent-slug>`
+
+**Polling model:** The Worker runs the check script and sleep in a **same-turn agent loop** — not one long-running bash process. Cursor aborts shell commands that run longer than ~60 seconds; giving up after a few checks is a procedure violation.
 
 Perform the following actions:
 
@@ -150,12 +158,34 @@ Perform the following actions:
 
 2. **Polling gate:** If `polling_enabled` is false, announce that automatic work polling is stopped and await explicit operator instruction to resume. Stop (end turn).
 
-3. **Stop condition evaluation:** Evaluate stop conditions per §3.7.1 before reading the Task Bus. If any apply, handle per §3.7.1 and stop (end turn).
+3. **Stop condition evaluation:** Evaluate stop conditions per §3.7.1 before polling. If any apply (except operator stop via stop script, handled during poll), handle per §3.7.1 and stop (end turn).
 
-4. **Read Task Bus:** Read `.apm/bus/<agent-slug>/task.md` per `{SKILL_PATH:apm-communication}` §4 Message Bus Protocol.
+4. **Start polling loop (agent-driven):** Verify `.apm/scripts/poll-task-bus.sh` exists. If missing, inform the operator that APM must be updated (`apm update` or project-equivalent) to install polling scripts — do not end turn awaiting `{COMMAND_SLUG:task}`.
 
-5. **Branch on Task Bus state:**
-   - **Empty:** Announce idle readiness — state that the Worker is ready for assignments and will automatically check the Task Bus when the User next interacts in this chat. On subsequent operator interactions in this Worker chat, re-enter this procedure (§3.7 step 3 onward) before responding to the User's message. Stop (end turn).
+   Remove any stale stop signal at `.apm/bus/<agent-slug>/polling.stop` if present. Inform the operator that work polling is active and display the stop command:
+
+   ```bash
+   bash .apm/scripts/stop-task-polling.sh <agent-slug>
+   ```
+
+   **Repeat** the following until `WORK_FOUND` or `POLLING_STOPPED` — do not end the turn, do not abort after a time limit or number of empty checks, and do not tell the operator to run `{COMMAND_SLUG:work}` again to resume polling:
+
+   a. Run via shell tool:
+
+   ```bash
+   bash .apm/scripts/poll-task-bus.sh <agent-slug>
+   ```
+
+   b. Branch on output:
+   - **`WORK_FOUND`:** Exit this loop; continue to step 5.
+   - **`POLLING_STOPPED`:** Set `polling_enabled` false. Confirm polling was stopped via the stop button and state how to resume (re-engage execution or run `{COMMAND_SLUG:task}`). Stop (end turn).
+   - **`STILL_EMPTY`:** Run a separate short wait, then return to step 4a:
+
+   ```bash
+   sleep ${APM_POLL_INTERVAL:-10}
+   ```
+
+5. **Read and validate Task Bus:** Read `.apm/bus/<agent-slug>/task.md` per `{SKILL_PATH:apm-communication}` §4 Message Bus Protocol.
    - **Invalid content:** Missing frontmatter, empty body, or unparseable structure — surface the error to the operator; do not execute. Stop (end turn).
    - **Misrouted assignment:** If `agent` in YAML frontmatter does not match registered identity, decline and alert the operator of a routing error. Do not clear the Task Bus; direct the operator to route to the correct Worker. Stop (end turn).
    - **Populated (valid assignment):** Continue to step 6.
@@ -164,7 +194,7 @@ Perform the following actions:
 
 7. **Auto-pick and execute:** Process the assignment per §3.1 Task Prompt Receipt through §3.6 Task Completion (including clearing the Task Bus per bus protocol on receipt). Increment `assignments_completed_this_session`.
 
-8. **Same-turn exhaustion:** After completing step 7, return to step 2 (Work Queue Check loop) without ending the conversation turn — continue until the queue is empty, a stop condition applies, or `polling_enabled` is false.
+8. **Same-turn exhaustion:** After completing step 7, return to step 2 (Work Queue Check loop) without ending the conversation turn — continue until polling is stopped, a stop condition applies, or `polling_enabled` is false.
 
 #### 3.7.1 Stop Conditions
 
@@ -173,11 +203,12 @@ Evaluate in priority order when multiple conditions may apply:
 | Priority | Condition | Action |
 |----------|-----------|--------|
 | 1 | Operator initiates Handoff | Follow `{COMMAND_PATH:apm.handoff.worker}`; polling stops until new agent instance |
-| 2 | Operator explicit stop | User says "stop", "wait", "pause polling", or equivalent — set `polling_enabled` false; confirm stopped state and how to resume |
-| 3 | Context threshold met | Handle per §3.7.2 |
-| 4 | Task Failed (batch fail-fast) | Per §2.6 Batch Rules — stop batch; after batch report, queue check may resume unless other stops apply |
-| 5 | Misrouted assignment | Handled at step 5 |
-| 6 | Invalid Task Bus content | Handled at step 5 |
+| 2 | Operator stop (stop button) | User runs `bash .apm/scripts/stop-task-polling.sh <agent-slug>` — poll script exits with `POLLING_STOPPED`; set `polling_enabled` false |
+| 3 | Operator explicit stop (in chat) | User says "stop", "wait", "pause polling", or equivalent — set `polling_enabled` false; if currently polling, also run stop script or wait for next poll cycle |
+| 4 | Context threshold met | Handle per §3.7.2 |
+| 5 | Task Failed (batch fail-fast) | Per §2.6 Batch Rules — stop batch; after batch report, queue check may resume unless other stops apply |
+| 6 | Misrouted assignment | Handled at step 5 |
+| 7 | Invalid Task Bus content | Handled at step 5 |
 
 When stopping due to context threshold with unprocessed assignments on the Task Bus, do NOT clear the Task Bus — preserve assignments for the incoming agent after Handoff.
 
@@ -203,6 +234,8 @@ When session context assessment per §2.7 yields `at_or_above_threshold` or `unc
 - *Continuing to iterate instead of delegating:* When a correction does not resolve the issue, the effective path is spawning a debug subagent with accumulated context rather than continuing in the main context. Each iteration consumes context budget and reduces reasoning quality - a subagent with fresh context is more effective.
 - *Working non-incrementally:* Writing large deliverables in one pass without testing intermediate results. Build incrementally - compile, run, or validate after each meaningful step rather than producing everything and then discovering issues.
 - *Logging Success with incomplete validation:* Marking a Task as Success when validation criteria were not fully exercised. If criteria cannot be met (missing resources, need User cooperation), log as Partial and explain what remains rather than claiming Success with caveats.
+- *Ending turn instead of polling:* After Task Completion, telling the User to run `{COMMAND_SLUG:task}` or legacy names like `apm-4-check-tasks` instead of running the polling loop. Task Completion requires §3.7 polling — not an idle handoff to the operator.
+- *Aborting polling early:* Ending the turn after a few empty checks, because Cursor aborted a long-running shell command, or telling the User to run `{COMMAND_SLUG:work}` again to resume. Use the agent-driven loop (check → sleep → check) indefinitely until `WORK_FOUND` or `POLLING_STOPPED`.
 
 ---
 
