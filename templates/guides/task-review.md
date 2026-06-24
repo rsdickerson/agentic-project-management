@@ -278,7 +278,7 @@ After a dispatch cycle completes, automatically check Report Buses for Worker Ta
 **Poll-until-stop (FR-017):** An empty Report Bus is **not** a stop condition. When the poll script returns `STILL_EMPTY`, run `sleep ${APM_POLL_INTERVAL:-10}` and call the check script again in the same conversation turn. **Do not** end the turn after a single empty check, idle announcement, or because Cursor aborted a long-running shell command — use repeated short shell calls instead. Continue until `REPORT_FOUND`, `POLLING_STOPPED`, or a stop condition in §3.8.1 fires.
 
 **Session attributes** (maintain during the session):
-- `report_polling_enabled`: Whether automatic Report Bus checking is active (default: true after first dispatch cycle; set false when operator stops, Handoff initiates, context threshold triggers, or coordination completes)
+- `report_polling_enabled`: Whether automatic Report Bus checking is active. **Manual Mode default: false** at session init (§2.13). **Autonomous Mode default: true** after §3.8 step 0 gate permits entry (typically after first dispatch). Set false when operator stops, Handoff initiates, context threshold triggers, coordination completes, or Manual Mode is detected.
 - `reviews_completed_this_session`: Count of substantial Task Reviews completed this session (increment after each §3 review cycle)
 - `context_estimate`: Best-effort utilization (`low` / `moderate` / `high` / `threshold` / `uncertain`)
 

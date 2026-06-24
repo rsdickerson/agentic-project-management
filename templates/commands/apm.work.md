@@ -64,7 +64,10 @@ When a Task Prompt is available (detected during init, auto-picked from Task Bus
 
    If output is `STILL_EMPTY`, run `sleep ${APM_POLL_INTERVAL:-10}` and call the check script again. Continue until `WORK_FOUND` or `POLLING_STOPPED`. **Do not give up** after a time limit or number of empty checks. **Do not** tell the User to run `{COMMAND_SLUG:work}` again to resume polling.
 
-   - **ELSE (Manual Mode):** Confirm Task Report delivery to the Manager. Instruct the operator to run `{COMMAND_SLUG:task}` or `{COMMAND_SLUG:work}` when the next assignment arrives. **Do not** enter §3.7. Stop (end turn).
+   - **ELSE (Manual Mode — default, FR-004):** Confirm Task Report delivery to the Manager. Instruct the operator:
+     - Run `{COMMAND_SLUG:review}` on the Manager session when the report is delivered (if the Manager has not already reviewed).
+     - Run `{COMMAND_SLUG:task}` or `{COMMAND_SLUG:work}` on this Worker session when the next assignment arrives.
+     **Do not** enter §3.7 Work Queue Check. **Do not** run the poll script. Stop (end turn) after single assignment completion.
 
 3. **On WORK_FOUND (Autonomous Mode only):** Process the new assignment (return to step 1). Same-turn exhaustion continues until polling stops or a stop condition applies.
 

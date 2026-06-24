@@ -22,12 +22,11 @@ Accepts an optional `[agent-id]` argument. If registered, ignore it (bus path al
 
 4. Cross-validate `agent` field in YAML frontmatter against registered identity. Mismatch flags a routing error - decline and direct User to the correct Worker. Process the Task per `{GUIDE_PATH:task-execution}` §3 Task Execution Procedure.
 
-**Relationship to auto-polling:** Initialized Workers with active work polling run `.apm/scripts/poll-task-bus.sh` after each assignment completion (see `{GUIDE_PATH:task-execution}` §3.7). This command remains valid as:
-- **Init trigger:** Required when the Worker is not yet registered (step 2 resolves identity and initializes).
-- **Manual fallback:** Explicit operator override to force a queue check when auto-polling is active or after polling was stopped.
-- **Documentation compatibility:** Equivalent to entering Work Queue Check for registered Workers.
+**Primary Manual Mode path (FR-009):** When Autonomous Mode is inactive (default), this command is the **primary** next-task delivery path at the task-delivery boundary. After completing an assignment, the Worker stops after single-run execution and the operator runs `{COMMAND_SLUG:task}` (or `{COMMAND_SLUG:work}`) when the next assignment arrives — the Worker does not enter automatic task polling per `{GUIDE_PATH:task-execution}` §3.7.
 
-When auto-polling is active, operators typically do not need this command after each Task completion — the Worker picks up queued assignments automatically.
+**Init trigger:** Required when the Worker is not yet registered (step 2 resolves identity and initializes per `{COMMAND_PATH:apm.work}` §2.1).
+
+**Autonomous Mode fallback:** When Autonomous Mode is active, initialized Workers automatically check the Task Bus after each assignment via `{GUIDE_PATH:task-execution}` §3.7 and operators typically do not need this command at the task-delivery boundary. Use this command when autonomous task polling is inactive — after polling was stopped, when Autonomous Mode has ended, or when the operator wants explicit control to force a queue check.
 
 ---
 

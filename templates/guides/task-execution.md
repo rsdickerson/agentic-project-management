@@ -161,7 +161,7 @@ After Task Completion, automatically check the Task Bus for additional assignmen
 **Poll-until-stop (FR-017):** An empty Task Bus is **not** a stop condition. When the poll script returns `STILL_EMPTY`, run `sleep ${APM_POLL_INTERVAL:-10}` and call the check script again in the same conversation turn. **Do not** end the turn after a single empty check, idle announcement, or because Cursor aborted a long-running shell command — use repeated short shell calls instead. Continue until `WORK_FOUND`, `POLLING_STOPPED`, or a stop condition in §3.7.1 fires.
 
 **Session attributes** (maintain during the session):
-- `polling_enabled`: Whether automatic queue-check is active (default: true after registration; set false when operator stops polling or context threshold triggers)
+- `polling_enabled`: Whether automatic queue-check is active. **Manual Mode default: false** at session init (§2.8). **Autonomous Mode default: true** after §3.7 step 0 gate permits entry. Set false when operator stops polling, context threshold triggers, or Manual Mode is detected.
 - `assignments_completed_this_session`: Count of Tasks completed this session (increment after each §3.6 completion)
 
 **Scripts** (project root, shipped in `.apm/scripts/`):
