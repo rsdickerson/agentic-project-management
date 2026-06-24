@@ -305,6 +305,10 @@ Perform the following actions:
 
 After a dispatch cycle completes, automatically check Report Buses for Worker Task Reports when Autonomous Mode gates permit entry. When reports arrive, process them per §3 Task Review Procedure, dispatch follow-on Tasks or stop Worker polling, and resume checking until stop conditions apply — all in the same coordination turn when possible.
 
+**Loop structure (FR-007, SC-006):** Step 0 (Autonomous Mode gate and §2.14 mode coupling check) runs **once** when entering §3.8 from `{COMMAND_PATH:apm.manage}` §3 Continuous Coordination or explicit Manager re-entry into report polling. The **review-dispatch-resume loop** (steps 1 → 3 → 4 → 5 → 6 → 1) does **not** re-run step 0 — preserving feature 002 parallel report handling and same-turn reassessment per §2.4 Parallel Coordination Standards. Re-run step 0 only when starting a **new** §3.8 entry after the procedure fully exits (end turn).
+
+**Parallel multi-Worker (unchanged from 002):** Reports may arrive in any order from multiple Workers. Process each report through §3.1–§3.3 per §2.4 Async report handling. When `poll-report-bus.sh` discovers multiple non-empty Report Buses, batch-read and process all in the current cycle before reassessing dispatch. Parallel dispatch to multiple Workers in step 6 follows `{GUIDE_PATH:task-assignment}` §2.4 and §3.3 — Autonomous Mode gates do not serialize cross-Worker coordination.
+
 **Poll-until-stop (FR-017):** An empty Report Bus is **not** a stop condition. When the poll script returns `STILL_EMPTY`, run `sleep ${APM_POLL_INTERVAL:-10}` and call the check script again in the same conversation turn. **Do not** end the turn after a single empty check, idle announcement, or because Cursor aborted a long-running shell command — use repeated short shell calls instead. Continue until `REPORT_FOUND`, `POLLING_STOPPED`, or a stop condition in §3.8.1 fires.
 
 **Session attributes** (maintain during the session):
@@ -321,9 +325,11 @@ After a dispatch cycle completes, automatically check Report Buses for Worker Ta
 
 Perform the following actions:
 
-0. **Autonomous Mode gate:** Run §2.13 Execution Mode Detection. Then:
+0. **Autonomous Mode gate (entry only):** Run §2.13 Execution Mode Detection. Then:
    - **IF** `autonomous_mode_enabled` is false (**Manual Mode**): Instruct the operator to run `{COMMAND_SLUG:review}` when Worker reports are delivered. Set `report_polling_enabled = false`. **Do not** enter Report Queue Check. Stop (end turn).
    - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Run §2.14 Mode Coupling Check. On **coupling_fail**, §2.14 handles Manual fallback and stop. On **coupling_ok**, set `report_polling_enabled = true` and continue to step 1.
+
+   *This step runs once per §3.8 entry — not on step 6 loop-back.*
 
 1. **Polling gate:** If `report_polling_enabled` is false, announce that automatic report polling is stopped. If polling was previously active this session, emit §3.8.2 Autonomous Session End Message. Await explicit operator instruction to resume (`{COMMAND_SLUG:review}` or next dispatch cycle). Stop (end turn).
 
@@ -354,16 +360,16 @@ Perform the following actions:
    sleep ${APM_POLL_INTERVAL:-10}
    ```
 
-4. **Process reports:** For each non-empty Report Bus discovered (batch-read in a single terminal invocation when multiple), read report content. If the agent is not in Worker tracking, process per §2.9 Non-APM Agent Reports. Otherwise, process each report through §3.1 Report Processing, §3.2 Task Log Review, and §3.3 Review Outcome. If a Task Log is missing or report content is unparseable, surface the error, do not mark the Task Done, and handle per §3.8.1 Priority 7. Clear each processed Report Bus after processing per bus protocol. Increment `reviews_completed_this_session` after each substantial review cycle.
+4. **Process reports (parallel-safe):** For each non-empty Report Bus discovered — when multiple Workers report, batch-read all in a single terminal invocation — read report content. Process reports in discovery order; arrival order does not affect Tracker correctness per §2.4 Async report handling. If the agent is not in Worker tracking, process per §2.9 Non-APM Agent Reports. Otherwise, process **each** report through §3.1 Report Processing, §3.2 Task Log Review, and §3.3 Review Outcome before reassessing dispatch for the cycle. If a Task Log is missing or report content is unparseable, surface the error, do not mark the Task Done, and handle per §3.8.1 Priority 7. Clear each processed Report Bus after processing per bus protocol. Increment `reviews_completed_this_session` after each substantial review cycle.
 
 5. **Context threshold assessment:** Assess session context utilization per §2.12 Manager Session Context Assessment Standards. If threshold is met or uncertain-high, handle per §2.12 and stop (end turn) — preserve unprocessed Report Buses.
 
-6. **Review-dispatch-resume loop:** After processing all reports in this cycle:
-   - If Ready Tasks exist, run dispatch assessment and Task Prompt construction per `{GUIDE_PATH:task-assignment}` §3.1–§3.3, then return to step 1 without ending the turn.
-   - For each Worker whose report was processed this cycle with no Ready Tasks and no dispatch this turn, run `bash .apm/scripts/stop-task-polling.sh <agent-slug>` per §2.10 Worker Polling Stop Standards. Inform the User that Worker polling was stopped and that the Worker may need `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` when work becomes Ready later.
+6. **Review-dispatch-resume loop (parallel-safe):** After processing all reports in this cycle per §2.4 Parallel Coordination Standards — immediate reassessment, merge before dependent dispatch, same-turn review-to-dispatch:
+   - If Ready Tasks exist, run dispatch assessment and Task Prompt construction per `{GUIDE_PATH:task-assignment}` §3.1–§3.3 (including parallel dispatch units when applicable). **Return to step 1** — not step 0 — without ending the turn.
+   - For each Worker whose report was processed this cycle with no Ready Tasks and no dispatch this turn, run `bash .apm/scripts/stop-task-polling.sh <agent-slug>` per §2.10 Worker Polling Stop Standards. **Do not** stop Workers who received dispatch this turn (Task Bus populated; polling continues). Inform the User that Worker polling was stopped and that the Worker may need `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` when work becomes Ready later.
    - If all Stage Tasks are Done and merged, proceed to §3.5 Stage Summary Creation as applicable, then continue assessment.
    - If no Active Workers remain in Tracker, no non-empty Report Buses exist, and all relevant Workers are stopped: set `report_polling_enabled` false, emit §3.8.2 Autonomous Session End Message, inform the User that coordination report polling has ended, and stop (end turn).
-   - If Workers are still active or reports may still arrive, return to step 1 without ending the turn.
+   - If Workers are still active or reports may still arrive, **return to step 1** — not step 0 — without ending the turn.
 
 #### 3.8.1 Stop Conditions
 

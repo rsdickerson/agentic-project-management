@@ -84,6 +84,19 @@ Worktrees contain only tracked files; if a Worker needs untracked assets, note t
 
 Bus directories and files are created by the Planner during the Planning Phase - do not re-create them. Before writing to a Worker's Task Bus, clear the Worker's Report Bus (`.apm/bus/<agent-slug>/report.md`) via terminal (e.g., `truncate -s 0` or shell redirection). Skip clearing on first Task Prompt to a Worker when no report exists. Read the Task Bus before writing to it per `{SKILL_PATH:apm-communication}` §4 Message Bus Protocol. When dispatching multiple sequential Tasks to the same Worker, send them as a batch in a single Task Bus message per §4.5 Batch Envelope Format.
 
+### 2.8 Execution Mode Delivery Standards
+
+Task-delivery operator guidance depends on Execution Mode. Use `autonomous_mode_enabled` from the Manager session (detected at init per `{GUIDE_PATH:task-review}` §2.13; re-evaluate if the operator may have changed Autonomous Mode mid-session).
+
+| Execution Mode | Worker state | Operator action at task-delivery boundary |
+|----------------|--------------|-------------------------------------------|
+| **Manual Mode** (default) | Any | Direct the User to run `{COMMAND_SLUG:work} <agent-id>` (first init) or `{COMMAND_SLUG:task}` / `{COMMAND_SLUG:work}` (subsequent delivery) — Worker does not auto-pick |
+| **Autonomous Mode** | Not yet initialized | Direct the User to run `{COMMAND_SLUG:work} <agent-id>` once — Worker init enters §3.7 idle monitoring when Task Bus is empty |
+| **Autonomous Mode** | Initialized, polling active | **No operator action** — Worker auto-picks on next §3.7 poll cycle |
+| **Autonomous Mode** | Initialized, polling stopped (Manager stopped per §2.10 or session ended) | Direct the User to run `{COMMAND_SLUG:work} <agent-id>` or `{COMMAND_SLUG:task} <agent-id>` |
+
+**Parallel dispatch:** In Autonomous Mode, each initialized Worker with active polling auto-picks independently — no per-Worker operator commands at the task-delivery boundary. In Manual Mode, direct the User to each Worker requiring `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}`.
+
 ### 2.7 Non-APM Agent Dispatch
 
 When a non-APM agent has joined the session and you need to assign follow-up work to it, write a plain assignment to its Task Bus - not a full Task Prompt. Include what to do and what to produce, and instruct it to report back. Do not include log paths, logging instructions, or Handoff metadata - non-APM agents do not log to Memory or participate in Worker tracking.
@@ -127,12 +140,14 @@ Perform the following actions:
 4. Record the branch name in the Task row's Branch column when updating the Tracker.
 5. Clear the incoming Report Bus per §2.6 Delivery Standards.
 6. Read the Worker's Task Bus, then write the Task Prompt to it: `.apm/bus/<agent-slug>/task.md`. For batches, use §4.5 Batch Envelope Format.
-7. Direct the User to the Worker's chat per `{SKILL_PATH:apm-communication}` §2.1 Direct Communication:
-   - If the Worker is not yet initialized - direct the User to start a new chat and run `{COMMAND_SLUG:work} <agent-id>`. The Worker detects the pending Task Prompt during init and begins executing. Only on first dispatch to this Worker.
-   - If the Worker is already initialized and actively polling - no operator action is required; the Worker picks up the Task Prompt on the next poll cycle. `{COMMAND_SLUG:task}` remains available as a manual fallback.
-   - If the Worker's polling was stopped by the Manager (Worker tracking Notes indicate `polling stopped`, or the Worker session ended after review) - direct the User to run `{COMMAND_SLUG:work} <agent-id>` in the Worker's chat (or `{COMMAND_SLUG:task} <agent-id>` if the session is still open) so the Worker reads the Task Bus.
-   - For batch dispatch - summarize what the Worker will receive (number of Tasks, sequential execution).
-   - For parallel dispatch - list each Worker with its required action.
+7. Direct the User to the Worker's chat per §2.8 Execution Mode Delivery Standards and `{SKILL_PATH:apm-communication}` §2.1 Direct Communication:
+   - **Manual Mode (`autonomous_mode_enabled` false):** Always direct the User to run `{COMMAND_SLUG:work} <agent-id>` on first dispatch to an uninitialized Worker, or `{COMMAND_SLUG:task}` / `{COMMAND_SLUG:work}` on subsequent deliveries. The Worker does not auto-pick.
+   - **Autonomous Mode (`autonomous_mode_enabled` true):**
+     - If the Worker is not yet initialized — direct the User to run `{COMMAND_SLUG:work} <agent-id>` once. The Worker detects the pending Task Prompt during init and begins executing; idle monitoring applies when the Task Bus is empty after completion.
+     - If the Worker is already initialized and actively polling — **no operator action** at the task-delivery boundary; the Worker auto-picks on the next §3.7 poll cycle. `{COMMAND_SLUG:task}` remains a manual fallback.
+     - If the Worker's polling was stopped by the Manager (Worker tracking Notes indicate `polling stopped`, or the Worker session ended after review) — direct the User to run `{COMMAND_SLUG:work} <agent-id>` or `{COMMAND_SLUG:task} <agent-id>`.
+   - For batch dispatch — summarize what the Worker will receive (number of Tasks, sequential execution).
+   - For parallel dispatch — list each Worker with its required action per §2.8 (Autonomous: typically no action for initialized polling Workers; Manual: `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` per Worker).
 
 ### 3.4 Follow-Up Task Prompt Construction
 
@@ -145,7 +160,7 @@ Perform the following actions:
 4. Construct the follow-up prompt per §4.2 Follow-Up Format. Same `log_path` as the original.
 5. Clear the incoming Report Bus per §2.6 Delivery Standards.
 6. Read the Worker's Task Bus, then write to it: `.apm/bus/<agent-slug>/task.md`.
-7. Direct the User to the Worker per §3.3 Task Prompt Construction step 7.
+7. Direct the User to the Worker per §3.3 Task Prompt Construction step 7 (§2.8 Execution Mode Delivery Standards).
 
 ---
 
