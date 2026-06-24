@@ -151,6 +151,24 @@ async function copyApmDirectory(sourceDir, targetBuildDir) {
 }
 
 /**
+ * Copies rules/ directory to templates/rules/ in target build directory.
+ * Opt-in Cursor rules are NOT installed to .cursor/rules/ by default.
+ *
+ * @param {string} sourceDir - Source templates directory.
+ * @param {string} targetBuildDir - Target build directory.
+ * @returns {Promise<void>}
+ */
+async function copyRulesDirectory(sourceDir, targetBuildDir) {
+  const rulesSource = path.join(sourceDir, 'rules');
+  const rulesDest = path.join(targetBuildDir, 'templates', 'rules');
+
+  if (await fs.pathExists(rulesSource)) {
+    await fs.copy(rulesSource, rulesDest);
+    logger.info(`Copied rules/ → templates/rules/ (opt-in; not installed by default)`);
+  }
+}
+
+/**
  * Builds a single target.
  *
  * @param {Object} target - Target configuration.
@@ -177,6 +195,9 @@ async function buildTarget(target, config, version) {
 
   // Copy apm/ → .apm/ (common to all targets)
   await copyApmDirectory(sourceDir, targetBuildDir);
+
+  // Copy rules/ → templates/rules/ (opt-in; not installed to .cursor/rules/ by default)
+  await copyRulesDirectory(sourceDir, targetBuildDir);
 
   // Find template files (excludes _standards/ and apm/)
   const templateFiles = await findMdFiles(sourceDir);

@@ -5,6 +5,10 @@
 # Installs:
 #   .cursor/commands, .cursor/apm-guides, .cursor/skills, .cursor/agents  (from dist/cursor.zip)
 #   .apm/scripts/*                                                         (from templates/apm/scripts)
+#
+# Does NOT install opt-in Cursor rules (Manual Mode remains default). Rule templates ship in
+# templates/rules/ inside dist/cursor.zip and in templates/rules/ at repo root for dev.
+# Enable Autonomous Mode: cp templates/rules/apm-autonomous.mdc .cursor/rules/
 
 set -euo pipefail
 
@@ -46,7 +50,17 @@ mkdir -p "$APM_SCRIPTS_DIR"
 cp -f "${TEMPLATES_SCRIPTS}/"*.sh "${TEMPLATES_SCRIPTS}/README.md" "$APM_SCRIPTS_DIR/"
 chmod +x "${APM_SCRIPTS_DIR}/"*.sh
 
+RULES_TEMPLATES="${REPO_ROOT}/templates/rules"
+
 echo "APM dev install complete."
 echo "Cursor templates: ${CURSOR_DIR}"
 echo "Polling scripts:"
 ls -1 "$APM_SCRIPTS_DIR"
+echo ""
+echo "Opt-in Cursor rules (NOT installed by default — Manual Mode remains default):"
+if [[ -d "$RULES_TEMPLATES" ]]; then
+  ls -1 "${RULES_TEMPLATES}/"*.mdc 2>/dev/null || echo "  (none)"
+  echo "  Enable Autonomous Mode: cp templates/rules/apm-autonomous.mdc .cursor/rules/"
+else
+  echo "  (templates/rules not found at ${RULES_TEMPLATES})"
+fi

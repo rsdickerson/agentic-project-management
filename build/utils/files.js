@@ -23,8 +23,8 @@ export async function findMdFiles(sourceDir) {
   for (const item of items) {
     const fullPath = path.join(sourceDir, item.name);
 
-    // Skip _standards and apm directories (not processed as templates)
-    if (item.isDirectory() && (item.name === '_standards' || item.name === 'apm')) {
+    // Skip _standards, apm, and rules directories (not processed as markdown templates)
+    if (item.isDirectory() && (item.name === '_standards' || item.name === 'apm' || item.name === 'rules')) {
       continue;
     }
 

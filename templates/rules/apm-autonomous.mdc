@@ -1,0 +1,17 @@
+---
+alwaysApply: true
+---
+
+# APM Autonomous Execution Mode
+
+**Autonomous Execution Mode is active** for this project.
+
+Worker task polling and Manager report checking operate as one **paired capability** — not independent toggles. When coordinating via APM Manager and Worker sessions:
+
+- After dispatch, the Manager enters automatic report checking (Report Queue Check).
+- After task completion, Workers enter automatic work queue checking (Work Queue Check).
+- Manual commands (`/apm.review`, `/apm.task`, `/apm.work`) remain valid fallbacks when autonomous coordination stops.
+
+Read the `apm-autonomous` skill (`.cursor/skills/apm-autonomous/SKILL.md` after `apm update`) for mode semantics, coupling invariants, mismatch fallback, and stop behavior.
+
+To disable Autonomous Mode, remove this rule file or run `/apm.autonomous disable`.

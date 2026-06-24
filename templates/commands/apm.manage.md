@@ -27,6 +27,7 @@ Perform the following actions:
    - `{GUIDE_PATH:task-assignment}` - Task Prompt construction
    - `{GUIDE_PATH:task-review}` - Task Review, review outcomes, planning document modifications
    - `{SKILL_PATH:apm-communication}` - Message Bus protocol
+   - `{SKILL_PATH:apm-autonomous}` - Execution Mode detection and Autonomous Mode semantics
    After reading the Spec, check whether it references external User documents as authoritative sources. If so, read those documents before proceeding - you extract content from them into Task Prompts and need their context for the understanding summary.
 2. Check the Handoff Bus at `.apm/bus/manager/handoff.md`:
    - If it has content, you are an incoming Manager after Handoff. Proceed to §2.2 Incoming Manager Initiation.
@@ -62,9 +63,11 @@ Perform the following actions:
 
 After each review, reassess readiness and continue to dispatch in the same turn when Tasks are Ready without waiting for User input per `{GUIDE_PATH:task-review}` §2.4 Parallel Coordination Standards. Repeat until all Stages complete, User input is needed, User intervenes, or Handoff is needed.
 
-1. **Dispatch:** Run dispatch assessment per `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment, construct and deliver Task Prompt(s) per `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction. Direct User to the Worker(s) when initialization is required; for initialized Workers actively polling (001), no operator action is required at the task-delivery boundary.
-2. **Report Queue Check:** After dispatch completes, enter Report Queue Check per `{GUIDE_PATH:task-review}` §3.8. The procedure automatically detects Worker reports on the Report Bus, reviews them per Task Review §3, dispatches follow-on Tasks or stops Worker polling per §2.10, and resumes checking until stop conditions apply — without the operator running `{COMMAND_SLUG:review}` at the review boundary.
-3. **Continue coordination.** The Report Queue Check procedure handles review-dispatch-resume in the same turn when possible. When it exits:
+1. **Dispatch:** Run dispatch assessment per `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment, construct and deliver Task Prompt(s) per `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction. Direct User to the Worker(s) when initialization is required; for initialized Workers in Autonomous Mode, no operator action is required at the task-delivery boundary.
+2. **Report checking (Execution Mode branch):** Run `{GUIDE_PATH:task-review}` §2.13 Execution Mode Detection if not yet run this session. Then:
+   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Enter Report Queue Check per `{GUIDE_PATH:task-review}` §3.8. Set `report_polling_enabled = true`. The procedure automatically detects Worker reports on the Report Bus, reviews them per Task Review §3, dispatches follow-on Tasks or stops Worker polling per §2.10, and resumes checking until stop conditions apply — without the operator running `{COMMAND_SLUG:review}` at the review boundary.
+   - **ELSE (Manual Mode):** Instruct the operator to run `{COMMAND_SLUG:review}` when Worker reports are delivered. Set `report_polling_enabled = false`. **Do not** enter §3.8. Stop coordination turn (end turn) after dispatch unless other same-turn work remains.
+3. **Continue coordination (Autonomous Mode only).** When §3.8 was entered, the Report Queue Check procedure handles review-dispatch-resume in the same turn when possible. When it exits:
    - *Tasks Ready and dispatched:* The procedure loops back to Report Queue Check automatically.
    - *No Tasks Ready, Workers active:* The procedure continues polling until reports arrive or stop conditions apply.
    - *Follow-up needed:* Follow-up Task Prompts are delivered during the review cycle; polling resumes per §3.8.

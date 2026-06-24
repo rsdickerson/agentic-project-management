@@ -187,6 +187,23 @@ When uncertain, favor Handoff recommendation (conservative default). Recompute b
 5. Run `bash .apm/scripts/stop-report-polling.sh` if poll loop is active.
 6. Do NOT clear unprocessed Report Buses.
 
+### 2.13 Execution Mode Detection
+
+APM supports two execution modes: **Manual Mode** (default) and **Autonomous Mode** (opt-in paired polling). Detect mode at Manager session initiation and re-evaluate at Report Queue Check entry.
+
+**Session attribute:** `autonomous_mode_enabled` — parent gate that determines whether §3.8 may run.
+
+**Detection procedure:**
+
+ON session init OR before entering §3.8 Report Queue Check:
+
+1. Read project Cursor rule file `.cursor/rules/apm-autonomous.mdc`. If present and declares Autonomous Execution Mode active, set `autonomous_mode_enabled = true`. Otherwise set `autonomous_mode_enabled = false`.
+2. When Manual Mode (`autonomous_mode_enabled` false): set `report_polling_enabled = false`. Do not enter §3.8 until Autonomous Mode is active and gates permit entry.
+3. Inform the operator which Execution Mode is active (Manual or Autonomous) and what it implies for this Manager session.
+4. For mode semantics, coupling invariants, mismatch fallback, and stop behavior, read `{SKILL_PATH:apm-autonomous}`.
+
+**Re-evaluation:** If the operator may have enabled or disabled Autonomous Mode mid-session (rule added or removed), re-run this procedure at §3.8 entry before other gates.
+
 ---
 
 ## 3. Task Review Procedure
@@ -256,7 +273,9 @@ Perform the following actions:
 
 ### 3.8 Report Queue Check Procedure
 
-After a dispatch cycle completes, automatically check Report Buses for Worker Task Reports. When reports arrive, process them per §3 Task Review Procedure, dispatch follow-on Tasks or stop Worker polling, and resume checking until stop conditions apply — all in the same coordination turn when possible.
+After a dispatch cycle completes, automatically check Report Buses for Worker Task Reports when Autonomous Mode gates permit entry. When reports arrive, process them per §3 Task Review Procedure, dispatch follow-on Tasks or stop Worker polling, and resume checking until stop conditions apply — all in the same coordination turn when possible.
+
+**Poll-until-stop (FR-017):** An empty Report Bus is **not** a stop condition. When the poll script returns `STILL_EMPTY`, run `sleep ${APM_POLL_INTERVAL:-10}` and call the check script again in the same conversation turn. **Do not** end the turn after a single empty check, idle announcement, or because Cursor aborted a long-running shell command — use repeated short shell calls instead. Continue until `REPORT_FOUND`, `POLLING_STOPPED`, or a stop condition in §3.8.1 fires.
 
 **Session attributes** (maintain during the session):
 - `report_polling_enabled`: Whether automatic Report Bus checking is active (default: true after first dispatch cycle; set false when operator stops, Handoff initiates, context threshold triggers, or coordination completes)
@@ -272,6 +291,10 @@ After a dispatch cycle completes, automatically check Report Buses for Worker Ta
 
 Perform the following actions:
 
+0. **Autonomous Mode gate:** Run §2.13 Execution Mode Detection. Then:
+   - **IF** `autonomous_mode_enabled` is false (**Manual Mode**): Instruct the operator to run `{COMMAND_SLUG:review}` when Worker reports are delivered. Set `report_polling_enabled = false`. **Do not** enter Report Queue Check. Stop (end turn).
+   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Set `report_polling_enabled = true`. Continue to step 1.
+
 1. **Polling gate:** If `report_polling_enabled` is false, announce that automatic report polling is stopped and await explicit operator instruction to resume (`{COMMAND_SLUG:review}` or next dispatch cycle). Stop (end turn).
 
 2. **Stop condition evaluation:** Evaluate stop conditions per §3.8.1 before polling (except operator stop via stop script, handled during poll). If Handoff is initiated, follow `{COMMAND_PATH:apm.handoff.manager}` and stop. If operator explicitly stops in chat ("stop", "wait", "pause polling", or equivalent), set `report_polling_enabled` false, run `bash .apm/scripts/stop-report-polling.sh` if poll loop is active, confirm stopped state, and stop (end turn).
@@ -284,7 +307,7 @@ Perform the following actions:
    bash .apm/scripts/stop-report-polling.sh
    ```
 
-   **Repeat** the following until `REPORT_FOUND` or `POLLING_STOPPED` — do not end the turn, do not abort after a time limit or number of empty checks, and do not tell the operator to run `{COMMAND_SLUG:review}` again to resume polling:
+   **Repeat** the following until `REPORT_FOUND` or `POLLING_STOPPED` — do not end the turn, do not abort after a time limit or number of empty checks, and do not tell the operator to run `{COMMAND_SLUG:review}` again to resume polling. **`STILL_EMPTY` is not a stop signal** — always run sleep and return to step 3a:
 
    a. Run via shell tool:
 
@@ -456,6 +479,8 @@ modified: Task 2.3 scope clarified based on task-02-02.log.md findings. Modified
 - *Unacknowledged recovery:* When a Worker report indicates auto-compaction occurred, factor this into the assessment - reconstructed context may have affected report completeness.
 - *Single-document tunnel vision:* Updating the Spec without checking whether the Plan references the same content, or modifying the Plan without assessing whether the Spec's design assumptions still hold. Changes to one planning document often cascade to the other.
 - *Symptom treatment:* Modifying one document to work around an issue that should be addressed in another. When an issue surfaces in execution, trace it to the document where the root cause lives rather than patching around it elsewhere.
+- *Ending turn on empty report bus:* After dispatch, ending the turn after a single `STILL_EMPTY` from `poll-report-bus.sh`, announcing that no reports are available, or waiting for the operator to run `{COMMAND_SLUG:review}` again while `report_polling_enabled` remains true. Report Queue Check requires the same-turn check → sleep → check loop until `REPORT_FOUND`, `POLLING_STOPPED`, or a §3.8.1 stop condition. An empty Report Bus alone is never a valid reason to end the turn while polling is active.
+- *Aborting report polling early:* Ending the turn after a few empty checks or because Cursor aborted a long-running shell command. Use repeated short shell calls — not one long-running bash process.
 
 ---
 

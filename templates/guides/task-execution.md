@@ -79,6 +79,23 @@ Evaluate composite signals; no single signal is required:
 
 When uncertain, favor handoff recommendation (conservative default). Recompute before each auto-pick attempt — do not cache across long idle periods.
 
+### 2.8 Execution Mode Detection
+
+APM supports two execution modes: **Manual Mode** (default) and **Autonomous Mode** (opt-in paired polling). Detect mode at Worker session initiation and re-evaluate at Work Queue Check entry.
+
+**Session attribute:** `autonomous_mode_enabled` — parent gate that determines whether §3.7 may run.
+
+**Detection procedure:**
+
+ON session init OR before entering §3.7 Work Queue Check:
+
+1. Read project Cursor rule file `.cursor/rules/apm-autonomous.mdc`. If present and declares Autonomous Execution Mode active, set `autonomous_mode_enabled = true`. Otherwise set `autonomous_mode_enabled = false`.
+2. When Manual Mode (`autonomous_mode_enabled` false): set `polling_enabled = false`. Do not enter §3.7 until Autonomous Mode is active and gates permit entry.
+3. Inform the operator which Execution Mode is active (Manual or Autonomous) and what it implies for this Worker session.
+4. For mode semantics, coupling invariants, mismatch fallback, and stop behavior, read `{SKILL_PATH:apm-autonomous}`.
+
+**Re-evaluation:** If the operator may have enabled or disabled Autonomous Mode mid-session (rule added or removed), re-run this procedure at §3.7 entry before other gates.
+
 ---
 
 ## 3. Task Execution Procedure
@@ -135,11 +152,13 @@ Perform the following actions:
    - *After Handoff.* If this is the first Task after Handoff initialization, include incoming Worker indication: state instance number, list the specific Task Log files loaded, and note that previous-Stage logs were not loaded.
    - *After recovery:* If auto-compaction occurred and recovery was performed via `{COMMAND_SLUG:recover}`, note it in the Task Report so the Manager is aware.
 5. Direct the User to deliver the Task Report to the Manager per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. When the Manager is actively polling for reports (Report Queue Check per `{GUIDE_PATH:task-review}` §3.8), writing the report to the Report Bus is sufficient — the Manager will detect it automatically; still provide delivery guidance for sessions where polling is inactive.
-6. **MANDATORY — do not end turn:** Immediately continue to §3.7 Work Queue Check Procedure. Run the poll script via the shell tool before sending any closing message. **Do NOT** tell the User you are ready for the next Task, **do NOT** direct the User to run `{COMMAND_SLUG:task}`, and **do NOT** use legacy command names such as `apm-4-check-tasks`.
+6. **Continue to Work Queue Check:** Proceed to §3.7 Work Queue Check Procedure. §3.7 step 0 Autonomous Mode gate determines whether polling runs or Manual Mode exit applies — when Autonomous Mode is active, run the poll script before sending any closing message; when Manual Mode, stop after delivery guidance per §3.7 step 0.
 
 ### 3.7 Work Queue Check Procedure
 
-After Task Completion, automatically check the Task Bus for additional assignments. When the queue is empty, run the polling script in a loop until work arrives, polling is stopped, or a higher-priority stop condition applies.
+After Task Completion, automatically check the Task Bus for additional assignments when Autonomous Mode gates permit entry. When the queue is empty, run the polling script in a **same-turn agent loop** until work arrives, polling is stopped, or a higher-priority stop condition applies.
+
+**Poll-until-stop (FR-017):** An empty Task Bus is **not** a stop condition. When the poll script returns `STILL_EMPTY`, run `sleep ${APM_POLL_INTERVAL:-10}` and call the check script again in the same conversation turn. **Do not** end the turn after a single empty check, idle announcement, or because Cursor aborted a long-running shell command — use repeated short shell calls instead. Continue until `WORK_FOUND`, `POLLING_STOPPED`, or a stop condition in §3.7.1 fires.
 
 **Session attributes** (maintain during the session):
 - `polling_enabled`: Whether automatic queue-check is active (default: true after registration; set false when operator stops polling or context threshold triggers)
@@ -153,6 +172,10 @@ After Task Completion, automatically check the Task Bus for additional assignmen
 **Polling model:** The Worker runs the check script and sleep in a **same-turn agent loop** — not one long-running bash process. Cursor aborts shell commands that run longer than ~60 seconds; giving up after a few checks is a procedure violation.
 
 Perform the following actions:
+
+0. **Autonomous Mode gate:** Run §2.8 Execution Mode Detection. Then:
+   - **IF** `autonomous_mode_enabled` is false (**Manual Mode**): Confirm the User is directed to deliver the Task Report to the Manager. Instruct the operator to run `{COMMAND_SLUG:task}` or `{COMMAND_SLUG:work}` when the next assignment arrives. Set `polling_enabled = false`. **Do not** enter the Work Queue Check loop. Stop (end turn).
+   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Set `polling_enabled = true`. Continue to step 1.
 
 1. **Report delivery reminder:** Confirm the User is directed to deliver the latest Task Report to the Manager. If any prior Task Reports from this session remain undelivered, remind the User to deliver those outstanding reports before or alongside proceeding with new work — auto-pickup does not waive report delivery obligations.
 
@@ -168,7 +191,7 @@ Perform the following actions:
    bash .apm/scripts/stop-task-polling.sh <agent-slug>
    ```
 
-   **Repeat** the following until `WORK_FOUND` or `POLLING_STOPPED` — do not end the turn, do not abort after a time limit or number of empty checks, and do not tell the operator to run `{COMMAND_SLUG:work}` again to resume polling:
+   **Repeat** the following until `WORK_FOUND` or `POLLING_STOPPED` — do not end the turn, do not abort after a time limit or number of empty checks, and do not tell the operator to run `{COMMAND_SLUG:work}` again to resume polling. **`STILL_EMPTY` is not a stop signal** — always run sleep and return to step 4a:
 
    a. Run via shell tool:
 
@@ -234,8 +257,9 @@ When session context assessment per §2.7 yields `at_or_above_threshold` or `unc
 - *Continuing to iterate instead of delegating:* When a correction does not resolve the issue, the effective path is spawning a debug subagent with accumulated context rather than continuing in the main context. Each iteration consumes context budget and reduces reasoning quality - a subagent with fresh context is more effective.
 - *Working non-incrementally:* Writing large deliverables in one pass without testing intermediate results. Build incrementally - compile, run, or validate after each meaningful step rather than producing everything and then discovering issues.
 - *Logging Success with incomplete validation:* Marking a Task as Success when validation criteria were not fully exercised. If criteria cannot be met (missing resources, need User cooperation), log as Partial and explain what remains rather than claiming Success with caveats.
-- *Ending turn instead of polling:* After Task Completion, telling the User to run `{COMMAND_SLUG:task}` or legacy names like `apm-4-check-tasks` instead of running the polling loop. Task Completion requires §3.7 polling — not an idle handoff to the operator.
-- *Aborting polling early:* Ending the turn after a few empty checks, because Cursor aborted a long-running shell command, or telling the User to run `{COMMAND_SLUG:work}` again to resume. Use the agent-driven loop (check → sleep → check) indefinitely until `WORK_FOUND` or `POLLING_STOPPED`.
+- *Ending turn instead of polling:* After Task Completion, telling the User to run `{COMMAND_SLUG:task}` or legacy names like `apm-4-check-tasks` instead of running the polling loop. Task Completion requires §3.7 polling when Autonomous Mode gates permit — not an idle handoff to the operator.
+- *Aborting polling early:* Ending the turn after a few empty checks, after a single `STILL_EMPTY`, because Cursor aborted a long-running shell command, or telling the User to run `{COMMAND_SLUG:work}` again to resume. Use the agent-driven loop (check → sleep → check) indefinitely until `WORK_FOUND`, `POLLING_STOPPED`, or a §3.7.1 stop condition. An empty Task Bus alone is never a valid reason to end the turn while polling is active.
+- *Treating idle as stop:* Announcing the Worker is idle-ready and ending the turn while `polling_enabled` remains true and no stop condition from §3.7.1 applies. Idle monitoring **is** polling — keep the same-turn loop running.
 
 ---
 
