@@ -96,6 +96,34 @@ ON session init OR before entering §3.7 Work Queue Check:
 
 **Re-evaluation:** If the operator may have enabled or disabled Autonomous Mode mid-session (rule added or removed), re-run this procedure at §3.7 entry before other gates.
 
+### 2.9 Mode Coupling Check
+
+Run at §3.7 entry when `autonomous_mode_enabled` is true (immediately after §2.8). Skip when Manual Mode — no paired loop required.
+
+**Purpose:** Enforce that Worker task polling and Manager report checking operate as an inseparable pair per `{SKILL_PATH:apm-autonomous}` §4 and FR-012.
+
+**Procedure:**
+
+WHEN `autonomous_mode_enabled` is true:
+
+1. Re-read `.cursor/rules/apm-autonomous.mdc`. If absent OR does not declare Autonomous Execution Mode active → **coupling_fail** (reason: `rule_not_active`).
+2. Assess Manager participation: IF no evidence the Manager will participate in autonomous coordination — e.g., operator confirms the Manager session is in Manual Mode, operator ran `{COMMAND_SLUG:autonomous} disable`, operator was explicitly directed to manual `{COMMAND_SLUG:review}`, or Tracker shows no Active coordination context for this Worker's dispatched Task AND operator indicates Manager is not running Autonomous Mode → **coupling_fail** (reason: `manager_not_participating`).
+3. ELSE → **coupling_ok**.
+
+**On coupling_fail:**
+
+1. Announce:
+   ```
+   Autonomous Mode requires both Manager and Worker participation.
+   Falling back to Manual Mode for this session.
+   ```
+2. Set `autonomous_mode_enabled = false`, `polling_enabled = false`.
+3. Emit §3.7.3 Autonomous Session End Message.
+4. Confirm the User is directed to deliver the Task Report to the Manager. Instruct the operator to run `{COMMAND_SLUG:task}` or `{COMMAND_SLUG:work}` when the next assignment arrives.
+5. **Do not** enter the Work Queue Check loop. Stop (end turn).
+
+**On coupling_ok:** Continue §3.7 from step 0 Autonomous branch — set `polling_enabled = true` and proceed to step 1.
+
 ---
 
 ## 3. Task Execution Procedure
@@ -175,11 +203,11 @@ Perform the following actions:
 
 0. **Autonomous Mode gate:** Run §2.8 Execution Mode Detection. Then:
    - **IF** `autonomous_mode_enabled` is false (**Manual Mode**): Confirm the User is directed to deliver the Task Report to the Manager. Instruct the operator to run `{COMMAND_SLUG:task}` or `{COMMAND_SLUG:work}` when the next assignment arrives. Set `polling_enabled = false`. **Do not** enter the Work Queue Check loop. Stop (end turn).
-   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Set `polling_enabled = true`. Continue to step 1.
+   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Run §2.9 Mode Coupling Check. On **coupling_fail**, §2.9 handles Manual fallback and stop. On **coupling_ok**, set `polling_enabled = true` and continue to step 1.
 
 1. **Report delivery reminder:** Confirm the User is directed to deliver the latest Task Report to the Manager. If any prior Task Reports from this session remain undelivered, remind the User to deliver those outstanding reports before or alongside proceeding with new work — auto-pickup does not waive report delivery obligations.
 
-2. **Polling gate:** If `polling_enabled` is false, announce that automatic work polling is stopped and await explicit operator instruction to resume. Stop (end turn).
+2. **Polling gate:** If `polling_enabled` is false, announce that automatic work polling is stopped. If polling was previously active this session, emit §3.7.3 Autonomous Session End Message. Await explicit operator instruction to resume. Stop (end turn).
 
 3. **Stop condition evaluation:** Evaluate stop conditions per §3.7.1 before polling. If any apply (except operator stop via stop script, handled during poll), handle per §3.7.1 and stop (end turn).
 
@@ -201,7 +229,7 @@ Perform the following actions:
 
    b. Branch on output:
    - **`WORK_FOUND`:** Exit this loop; continue to step 5.
-   - **`POLLING_STOPPED`:** Set `polling_enabled` false. Confirm polling was stopped via the stop button and state how to resume (re-engage execution or run `{COMMAND_SLUG:task}`). Stop (end turn).
+   - **`POLLING_STOPPED`:** Set `polling_enabled` false. Confirm polling was stopped via the stop button. Emit §3.7.3 Autonomous Session End Message. State how to resume (re-enable Autonomous Mode and re-engage `{COMMAND_SLUG:work}`, or use `{COMMAND_SLUG:task}` in Manual Mode). Stop (end turn).
    - **`STILL_EMPTY`:** Run a separate short wait, then return to step 4a:
 
    ```bash
@@ -225,9 +253,9 @@ Evaluate in priority order when multiple conditions may apply:
 
 | Priority | Condition | Action |
 |----------|-----------|--------|
-| 1 | Operator initiates Handoff | Follow `{COMMAND_PATH:apm.handoff.worker}`; polling stops until new agent instance |
-| 2 | Operator stop (stop button) | User runs `bash .apm/scripts/stop-task-polling.sh <agent-slug>` — poll script exits with `POLLING_STOPPED`; set `polling_enabled` false |
-| 3 | Operator explicit stop (in chat) | User says "stop", "wait", "pause polling", or equivalent — set `polling_enabled` false; if currently polling, also run stop script or wait for next poll cycle |
+| 1 | Operator initiates Handoff | Follow `{COMMAND_PATH:apm.handoff.worker}`; set `polling_enabled` false; emit §3.7.3 Autonomous Session End Message; polling stops until new agent instance |
+| 2 | Operator stop (stop button) | User runs `bash .apm/scripts/stop-task-polling.sh <agent-slug>` — poll script exits with `POLLING_STOPPED`; set `polling_enabled` false; emit §3.7.3 |
+| 3 | Operator explicit stop (in chat) | User says "stop", "wait", "pause polling", or equivalent — set `polling_enabled` false; if currently polling, also run stop script or wait for next poll cycle; emit §3.7.3 |
 | 4 | Context threshold met | Handle per §3.7.2 |
 | 5 | Task Failed (batch fail-fast) | Per §2.6 Batch Rules — stop batch; after batch report, queue check may resume unless other stops apply |
 | 6 | Misrouted assignment | Handled at step 5 |
@@ -246,6 +274,20 @@ When session context assessment per §2.7 yields `at_or_above_threshold` or `unc
    - Deliver any outstanding reports to the Manager before or during Handoff
 3. If assignments remain on the Task Bus, state they are preserved for the incoming agent.
 4. Set `polling_enabled` false until new session or operator explicitly re-engages execution.
+5. Emit §3.7.3 Autonomous Session End Message.
+
+#### 3.7.3 Autonomous Session End Message (FR-010)
+
+When exiting an active autonomous Work Queue Check loop — stop script, operator explicit stop, Handoff, context threshold, coupling fail from autonomous state, or any §3.7.1 stop while `autonomous_mode_enabled` was true this session — emit before ending the turn:
+
+```
+Autonomous session has ended.
+You may:
+- Re-enable Autonomous Mode (ensure apm-autonomous rule is active, then continue with /apm.manage or /apm.work)
+- Switch to manual coordination (/apm.review, /apm.task, /apm.work)
+```
+
+Preserve unprocessed Task Bus assignments and Report Bus content. Do not auto-re-enter §3.7 until the operator re-enables Autonomous Mode and re-engages execution.
 
 ---
 

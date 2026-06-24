@@ -149,7 +149,7 @@ Manager report polling is independent of Worker task polling. Stop checking Repo
 bash .apm/scripts/stop-report-polling.sh
 ```
 
-Set `report_polling_enabled` false when stopping. Inform the User how to resume: re-engage coordination via `{COMMAND_SLUG:manage}` dispatch cycle or run `{COMMAND_SLUG:review}` as manual fallback.
+Set `report_polling_enabled` false when stopping. Emit §3.8.2 Autonomous Session End Message when stopping from an active autonomous report poll loop. Inform the User how to resume: re-enable Autonomous Mode and re-engage coordination via `{COMMAND_SLUG:manage}`, or run `{COMMAND_SLUG:review}` as manual fallback.
 
 ### 2.12 Manager Session Context Assessment Standards
 
@@ -186,6 +186,7 @@ When uncertain, favor Handoff recommendation (conservative default). Recompute b
 4. Set `report_polling_enabled` false.
 5. Run `bash .apm/scripts/stop-report-polling.sh` if poll loop is active.
 6. Do NOT clear unprocessed Report Buses.
+7. Emit §3.8.2 Autonomous Session End Message.
 
 ### 2.13 Execution Mode Detection
 
@@ -203,6 +204,35 @@ ON session init OR before entering §3.8 Report Queue Check:
 4. For mode semantics, coupling invariants, mismatch fallback, and stop behavior, read `{SKILL_PATH:apm-autonomous}`.
 
 **Re-evaluation:** If the operator may have enabled or disabled Autonomous Mode mid-session (rule added or removed), re-run this procedure at §3.8 entry before other gates.
+
+### 2.14 Mode Coupling Check
+
+Run at §3.8 entry when `autonomous_mode_enabled` is true (immediately after §2.13). Skip when Manual Mode — no paired loop required.
+
+**Purpose:** Enforce that Manager report checking and Worker task polling operate as an inseparable pair per `{SKILL_PATH:apm-autonomous}` §4 and FR-012.
+
+**Procedure:**
+
+WHEN `autonomous_mode_enabled` is true:
+
+1. Re-read `.cursor/rules/apm-autonomous.mdc`. If absent OR does not declare Autonomous Execution Mode active → **coupling_fail** (reason: `rule_not_active`).
+2. Assess Worker participation: Read `.apm/tracker.md` Worker tracking and Task Tracking. For each Worker with an `Active` Task or dispatched assignment expected to report:
+   - IF Worker is uninitialized in Tracker AND operator has not started that Worker session → **coupling_ok with wait_state_notice** — inform the operator which Worker(s) must run `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}`; continue §3.8 (not a hard fail).
+3. ELSE → **coupling_ok**.
+
+**On coupling_fail:**
+
+1. Announce:
+   ```
+   Autonomous Mode requires both Manager and Worker participation.
+   Falling back to Manual Mode for this session.
+   ```
+2. Set `autonomous_mode_enabled = false`, `report_polling_enabled = false`.
+3. Emit §3.8.2 Autonomous Session End Message.
+4. Instruct the operator to run `{COMMAND_SLUG:review}` when Worker reports are delivered.
+5. **Do not** enter Report Queue Check. Stop (end turn).
+
+**On coupling_ok (with or without wait_state_notice):** Continue §3.8 from step 0 Autonomous branch — set `report_polling_enabled = true` and proceed to step 1. When wait_state_notice applies, include expected Worker(s) in the operator message before starting the poll loop.
 
 ---
 
@@ -293,11 +323,11 @@ Perform the following actions:
 
 0. **Autonomous Mode gate:** Run §2.13 Execution Mode Detection. Then:
    - **IF** `autonomous_mode_enabled` is false (**Manual Mode**): Instruct the operator to run `{COMMAND_SLUG:review}` when Worker reports are delivered. Set `report_polling_enabled = false`. **Do not** enter Report Queue Check. Stop (end turn).
-   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Set `report_polling_enabled = true`. Continue to step 1.
+   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Run §2.14 Mode Coupling Check. On **coupling_fail**, §2.14 handles Manual fallback and stop. On **coupling_ok**, set `report_polling_enabled = true` and continue to step 1.
 
-1. **Polling gate:** If `report_polling_enabled` is false, announce that automatic report polling is stopped and await explicit operator instruction to resume (`{COMMAND_SLUG:review}` or next dispatch cycle). Stop (end turn).
+1. **Polling gate:** If `report_polling_enabled` is false, announce that automatic report polling is stopped. If polling was previously active this session, emit §3.8.2 Autonomous Session End Message. Await explicit operator instruction to resume (`{COMMAND_SLUG:review}` or next dispatch cycle). Stop (end turn).
 
-2. **Stop condition evaluation:** Evaluate stop conditions per §3.8.1 before polling (except operator stop via stop script, handled during poll). If Handoff is initiated, follow `{COMMAND_PATH:apm.handoff.manager}` and stop. If operator explicitly stops in chat ("stop", "wait", "pause polling", or equivalent), set `report_polling_enabled` false, run `bash .apm/scripts/stop-report-polling.sh` if poll loop is active, confirm stopped state, and stop (end turn).
+2. **Stop condition evaluation:** Evaluate stop conditions per §3.8.1 before polling (except operator stop via stop script, handled during poll). If Handoff is initiated, follow `{COMMAND_PATH:apm.handoff.manager}`, set `report_polling_enabled` false, emit §3.8.2 Autonomous Session End Message, and stop. If operator explicitly stops in chat ("stop", "wait", "pause polling", or equivalent), set `report_polling_enabled` false, run `bash .apm/scripts/stop-report-polling.sh` if poll loop is active, emit §3.8.2 Autonomous Session End Message, confirm stopped state, and stop (end turn).
 
 3. **Start polling loop (agent-driven):** Verify `.apm/scripts/poll-report-bus.sh` exists. If missing, inform the operator that APM must be updated (`apm update` or project-equivalent) to install polling scripts — do not end turn awaiting `{COMMAND_SLUG:review}`.
 
@@ -317,7 +347,7 @@ Perform the following actions:
 
    b. Branch on output:
    - **`REPORT_FOUND`:** Exit this loop; continue to step 4.
-   - **`POLLING_STOPPED`:** Set `report_polling_enabled` false. Confirm polling was stopped via the stop button and state how to resume (`{COMMAND_SLUG:review}` or re-engage coordination). Stop (end turn).
+   - **`POLLING_STOPPED`:** Set `report_polling_enabled` false. Confirm polling was stopped via the stop button. Emit §3.8.2 Autonomous Session End Message. State how to resume (re-enable Autonomous Mode and re-engage `{COMMAND_SLUG:manage}`, or use `{COMMAND_SLUG:review}` in Manual Mode). Stop (end turn).
    - **`STILL_EMPTY`:** Run a separate short wait, then return to step 3a:
 
    ```bash
@@ -332,7 +362,7 @@ Perform the following actions:
    - If Ready Tasks exist, run dispatch assessment and Task Prompt construction per `{GUIDE_PATH:task-assignment}` §3.1–§3.3, then return to step 1 without ending the turn.
    - For each Worker whose report was processed this cycle with no Ready Tasks and no dispatch this turn, run `bash .apm/scripts/stop-task-polling.sh <agent-slug>` per §2.10 Worker Polling Stop Standards. Inform the User that Worker polling was stopped and that the Worker may need `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` when work becomes Ready later.
    - If all Stage Tasks are Done and merged, proceed to §3.5 Stage Summary Creation as applicable, then continue assessment.
-   - If no Active Workers remain in Tracker, no non-empty Report Buses exist, and all relevant Workers are stopped: set `report_polling_enabled` false, inform the User that coordination report polling has ended, and stop (end turn).
+   - If no Active Workers remain in Tracker, no non-empty Report Buses exist, and all relevant Workers are stopped: set `report_polling_enabled` false, emit §3.8.2 Autonomous Session End Message, inform the User that coordination report polling has ended, and stop (end turn).
    - If Workers are still active or reports may still arrive, return to step 1 without ending the turn.
 
 #### 3.8.1 Stop Conditions
@@ -350,6 +380,19 @@ Evaluate in priority order when multiple conditions may apply:
 | 7 | Malformed report / missing Task Log | Surface error; do not mark Done; operator resolves |
 
 When stopping due to context threshold or Handoff with unprocessed reports, do NOT clear Report Buses for unprocessed reports.
+
+#### 3.8.2 Autonomous Session End Message (FR-010)
+
+When exiting an active autonomous Report Queue Check loop — stop script, operator explicit stop, Handoff, context threshold, coordination complete, coupling fail from autonomous state, or any §3.8.1 stop while autonomous polling was active this session — emit before ending the turn:
+
+```
+Autonomous session has ended.
+You may:
+- Re-enable Autonomous Mode (ensure apm-autonomous rule is active, then continue with /apm.manage or /apm.work)
+- Switch to manual coordination (/apm.review, /apm.task, /apm.work)
+```
+
+Preserve unprocessed Report Bus content, queued Task Bus assignments, and Tracker state. Do not auto-re-enter §3.8 until the operator re-enables Autonomous Mode and re-engages coordination.
 
 ---
 
