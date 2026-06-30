@@ -124,7 +124,7 @@ Handoff is User-initiated when context window limits approach.
 - **Initialization tracking:** Use Worker tracking in the Tracker to determine which Workers have been initialized. See `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction step 7 for initialization and delivery guidance.
 - **Handoff tracking:** Use Worker tracking and cross-agent overrides in the Tracker to track Worker Handoffs. See `{GUIDE_PATH:task-review}` §3.1 Report Processing for dependency reclassification details.
 - **Context scope:** Read only the APM documents listed in §2 Initiation. Do not read other agents' guides, commands, or APM procedural documents beyond those listed and their internal cross-references.
-- **Autonomous report polling (FR-017):** After every dispatch in Autonomous Mode, execute `{GUIDE_PATH:task-review}` §3.8 through at least one `poll-report-bus.sh` shell invocation before ending the turn. Textual statements that polling is active are not a substitute for the shell loop. When `report_polling_enabled` is true, do not end the turn awaiting operator `{COMMAND_SLUG:review}` — keep polling until `REPORT_FOUND`, `POLLING_STOPPED`, or a §3.8.1 stop condition.
+- **Autonomous report polling (FR-017):** After every dispatch in Autonomous Mode, execute `{GUIDE_PATH:task-review}` §3.8 poll loop in the **same turn** — re-invoke `poll-report-bus.sh` on every `STILL_EMPTY` until `REPORT_FOUND`, `POLLING_STOPPED`, or a §3.8.1 stop condition. One poll chunk is not sufficient to end the turn. Textual statements that polling is active are not a substitute for the shell loop. When `report_polling_enabled` is true, do not end the turn awaiting operator `{COMMAND_SLUG:review}`.
 
 ---
 

@@ -356,7 +356,7 @@ Perform the following actions:
 
    **Operator init then poll (same turn):** When this §3.8 entry follows a dispatch that wrote Task Prompts to Workers not actively polling, emit **separate per-Worker init copy blocks** per `{SKILL_PATH:apm-communication}` §2.4, then **immediately** run step 3a in this turn. Init blocks do **not** pause coordination — the Manager polls while the operator opens Worker chats. **Do not end the turn** between init blocks and step 3a.
 
-   **First poll mandatory:** After init blocks (when required), run step 3a at least once in this turn before ending. If output is `REPORT_FOUND`, proceed immediately to step 4 — do not instruct the operator to run `{COMMAND_SLUG:review}`.
+   **First poll mandatory — loop until stop:** After init blocks (when required), run step 3a at least once in this turn before ending. **`STILL_EMPTY` requires immediate re-invocation of step 3a** — one chunk (~50s) is not a valid exit. If output is `REPORT_FOUND`, proceed immediately to step 4 — do not instruct the operator to run `{COMMAND_SLUG:review}`.
 
    When Autonomous Mode is active, display the stop command — **after** the first step 3a invocation, or interleaved with the poll loop, not instead of it. Apply wait-state suppression per `{SKILL_PATH:apm-communication}` §2.4 on `STILL_EMPTY` — do not announce Report Queue Check on every empty cycle:
 
