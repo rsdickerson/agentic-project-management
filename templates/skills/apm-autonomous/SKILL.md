@@ -94,10 +94,15 @@ When Worker task polling or Manager report checking **is active** (Autonomous Mo
 - Continue until work or a report arrives **OR** a defined stop condition fires.
 - **Do NOT** end the conversation turn after a single empty check (`STILL_EMPTY`) or idle announcement while polling remains active.
 - An empty Task Bus or Report Bus alone is **NOT** a stop condition.
+- **Manager:** Announcing "Report Queue Check is active" without running `poll-report-bus.sh` via shell in the same turn is a procedure violation. See `{GUIDE_PATH:task-review}` §3.8 end-of-turn gate.
+- **Worker:** In Autonomous Mode, do not instruct `{COMMAND_SLUG:review}` as the primary report-delivery step — the Manager auto-detects via §3.8.
+- **`POLLING_STOPPED` is terminal (mid-session):** Do not resume the poll loop in the same session after the operator runs the stop script during **this** session — operator re-engages via `{COMMAND_SLUG:work}` / `{COMMAND_SLUG:manage}`. **Stale stop exception:** leftover stop files from prior sessions are cleared at session entry via `clear-stale-polling-stop.sh` — not a stop event.
 
 **Valid stop conditions** include: operator stop script, operator explicit stop in chat, Handoff initiation, session context threshold (~75%), coordination complete (no active Workers and no pending reports), fail-fast batch failure, and other stops defined in features 001 and 002.
 
-Poll scripts (`.apm/scripts/poll-task-bus.sh`, `.apm/scripts/poll-report-bus.sh`) are called repeatedly in a same-turn agent loop with `sleep ${APM_POLL_INTERVAL:-10}` between empty checks — not one long-running bash process.
+Poll scripts (`.apm/scripts/poll-task-bus.sh`, `.apm/scripts/poll-report-bus.sh`) loop internally (check → sleep → check) for up to `${APM_POLL_CHUNK_SECONDS:-50}` seconds per invocation. The agent re-invokes the script on `STILL_EMPTY` in a same-turn loop — one shell tool call per chunk, not per internal check. Cursor aborts shell commands longer than ~60 seconds; do not run a separate `sleep` between invocations.
+
+**Concise feedback (chat-only):** Wait-state suppression and compact heartbeat formats apply only during Autonomous Mode polling per `{SKILL_PATH:apm-communication}` §2.4 Concise Autonomous Feedback. Suppression affects operator-facing chat output only — poll script chunk duration, internal check interval, and stop conditions are unchanged. Substantive review, stop, and error messages remain fully explicit.
 
 ---
 

@@ -65,8 +65,10 @@ Perform the following actions:
 Perform the following actions:
 1. Clear the incoming Task Bus: truncate `.apm/bus/<agent-slug>/task.md` via terminal (e.g., `truncate -s 0` or shell redirection).
 2. Read the Report Bus, then write the Task Report to it: `.apm/bus/<agent-slug>/report.md`. The report is a concise summary - key outcome, status, log path, and any flags. Detail belongs in the Task Log.
-3. Direct the User to deliver the report to the Manager per `{SKILL_PATH:apm-communication}` §2.1 Direct Communication - provide both `{COMMAND_SLUG:review} <agent-id>` for targeted retrieval and `{COMMAND_SLUG:review}` as the general command, since multiple Workers may finish concurrently.
-4. Return control to `{GUIDE_PATH:task-execution}` §3.6 step 6 / §3.7 Work Queue Check Procedure. Do not tell the User to run `{COMMAND_SLUG:task}` or await the next assignment — polling handles queue checks automatically.
+3. **Report delivery guidance** (branch on Execution Mode per `{GUIDE_PATH:task-execution}` §2.8):
+   - **Autonomous Mode active** (`autonomous_mode_enabled` true): Emit **task completed** state-change per `{SKILL_PATH:apm-communication}` §2.4 (e.g., `Task {id} complete — report on Report Bus`). Inform the User the report is on the Report Bus and the Manager will auto-detect via Report Queue Check — **do not** instruct `{COMMAND_SLUG:review}` as the primary next step.
+   - **Manual Mode or queue checking stopped:** Direct the User to deliver the report per `{SKILL_PATH:apm-communication}` §2.1 Direct Communication — provide both `{COMMAND_SLUG:review} <agent-id>` and `{COMMAND_SLUG:review}`.
+4. Return control to `{GUIDE_PATH:task-execution}` §3.6 step 6 / §3.7 Work Queue Check Procedure. Do not tell the User to run `{COMMAND_SLUG:task}`, `{COMMAND_SLUG:review}`, or await the next assignment when Autonomous Mode polling will continue — polling handles queue checks automatically.
 
 For batch execution, write a single batch report per §4.3 Batch Report Format after completing all Tasks (or stopping on failure).
 

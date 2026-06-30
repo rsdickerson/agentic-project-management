@@ -3,7 +3,7 @@
 # Usage: bash .apm/scripts/stop-report-polling.sh
 #
 # Run from any terminal while the Manager is polling. The poll loop checks
-# for this signal on each iteration and stops at the next "checking for reports..." cycle.
+# for this signal on each iteration; the next poll-report-bus.sh returns POLLING_STOPPED.
 
 set -euo pipefail
 

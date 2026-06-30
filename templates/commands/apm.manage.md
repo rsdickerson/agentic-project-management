@@ -32,6 +32,13 @@ Perform the following actions:
 2. Check the Handoff Bus at `.apm/bus/manager/handoff.md`:
    - If it has content, you are an incoming Manager after Handoff. Proceed to §2.2 Incoming Manager Initiation.
    - If empty, you are the first Manager. Proceed to §2.1 First Manager Initiation.
+3. **Stale report-polling stop cleanup (every `{COMMAND_SLUG:manage}` entry):** Run via shell:
+
+   ```bash
+   bash .apm/scripts/clear-stale-polling-stop.sh manager
+   ```
+
+   Leftover `.apm/bus/manager/report-polling.stop` from a prior session does **not** apply to this session. If output is `STALE_STOP_CLEARED`, note briefly that a leftover stop file was removed — **do not** emit §3.8.2 Autonomous Session End Message and **do not** treat as `POLLING_STOPPED`. Proceed with initiation/coordination normally.
 
 ### 2.1 First Manager Initiation
 
@@ -63,10 +70,22 @@ Perform the following actions:
 
 After each review, reassess readiness and continue to dispatch in the same turn when Tasks are Ready without waiting for User input per `{GUIDE_PATH:task-review}` §2.4 Parallel Coordination Standards. Repeat until all Stages complete, User input is needed, User intervenes, or Handoff is needed.
 
-1. **Dispatch:** Run dispatch assessment per `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment, construct and deliver Task Prompt(s) per `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction. Direct User to the Worker(s) when initialization is required; for initialized Workers in Autonomous Mode, no operator action is required at the task-delivery boundary.
+1. **Dispatch:** Run dispatch assessment per `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment, construct and deliver Task Prompt(s) per `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction. When any dispatched Worker is uninitialized or not actively polling, emit **separate per-Worker init copy blocks** per `{SKILL_PATH:apm-communication}` §2.4, then **immediately** enter §3.8 and run the poll script in the **same turn** — never end the turn after init instructions alone.
 2. **Report checking (Execution Mode branch):** Run `{GUIDE_PATH:task-review}` §2.13 Execution Mode Detection if not yet run this session. Then:
-   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Enter Report Queue Check per `{GUIDE_PATH:task-review}` §3.8. Set `report_polling_enabled = true`. When Autonomous Mode is active, the procedure detects Worker reports on the Report Bus, reviews them per Task Review §3, dispatches follow-on Tasks or stops Worker queue checking per §2.10, and resumes checking until stop conditions apply — without the operator running `{COMMAND_SLUG:review}` at the review boundary.
+   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Enter Report Queue Check per `{GUIDE_PATH:task-review}` §3.8. Set `report_polling_enabled = true`. Apply wait-state suppression and state-change formats per `{SKILL_PATH:apm-communication}` §2.4 Concise Autonomous Feedback. When Autonomous Mode is active, the procedure detects Worker reports on the Report Bus, reviews them per Task Review §3, dispatches follow-on Tasks or stops Worker queue checking per §2.10, and resumes checking until stop conditions apply — without the operator running `{COMMAND_SLUG:review}` at the review boundary.
    - **ELSE (Manual Mode — default, FR-003):** Instruct the operator to run `{COMMAND_SLUG:review}` when Worker reports are delivered. Set `report_polling_enabled = false`. **Do not** enter Report Queue Check (§3.8). **Do not** run the report poll script. Stop coordination turn (end turn) after dispatch unless other same-turn work remains.
+
+   **Mandatory same-turn §3.8 execution (Autonomous Mode, FR-017):** Entering §3.8 means executing `{GUIDE_PATH:task-review}` §3.8 steps 3a–3b (shell poll loop) in **this same conversation turn** before ending. Dispatch → §3.8 is one continuous turn, not "dispatch now, poll later."
+
+   **Prohibited after dispatch (Autonomous Mode):**
+   - Ending the turn while `report_polling_enabled` is true without having run `bash .apm/scripts/poll-report-bus.sh` at least once via the shell tool in this turn (unless a §3.8.1 stop condition was handled per procedure).
+   - Ending the turn after per-Worker init copy blocks without immediately starting §3.8 polling in the same turn.
+   - Telling the operator to run `{COMMAND_SLUG:manage}` again to start report polling — polling starts in the dispatch turn.
+   - One combined fenced block for all Workers — use separate fences per Worker.
+   - Saying "Workers need initialization" without per-Worker fenced `{COMMAND_SLUG:work}` commands.
+   - Announcing "Report Queue Check is active" or "I'll process the report when it arrives" without immediately starting the §3.8 step 3 poll loop.
+   - Instructing the operator to run `{COMMAND_SLUG:review}` at the review boundary while Autonomous Mode is active and report polling has not been stopped — that is Manual Mode behavior (FR-003/FR-008).
+   - Telling the operator to "return here and run `{COMMAND_SLUG:review}`" after dispatch — use §3.8 polling instead.
 3. **Continue coordination (Autonomous Mode only).** When §3.8 was entered, the Report Queue Check procedure handles review-dispatch-resume in the same turn when possible. When it exits:
    - *Tasks Ready and dispatched:* The procedure loops back to Report Queue Check.
    - *No Tasks Ready, Workers active:* When Autonomous Mode is active, Report Queue Check continues until reports arrive or stop conditions apply.
@@ -105,6 +124,7 @@ Handoff is User-initiated when context window limits approach.
 - **Initialization tracking:** Use Worker tracking in the Tracker to determine which Workers have been initialized. See `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction step 7 for initialization and delivery guidance.
 - **Handoff tracking:** Use Worker tracking and cross-agent overrides in the Tracker to track Worker Handoffs. See `{GUIDE_PATH:task-review}` §3.1 Report Processing for dependency reclassification details.
 - **Context scope:** Read only the APM documents listed in §2 Initiation. Do not read other agents' guides, commands, or APM procedural documents beyond those listed and their internal cross-references.
+- **Autonomous report polling (FR-017):** After every dispatch in Autonomous Mode, execute `{GUIDE_PATH:task-review}` §3.8 through at least one `poll-report-bus.sh` shell invocation before ending the turn. Textual statements that polling is active are not a substitute for the shell loop. When `report_polling_enabled` is true, do not end the turn awaiting operator `{COMMAND_SLUG:review}` — keep polling until `REPORT_FOUND`, `POLLING_STOPPED`, or a §3.8.1 stop condition.
 
 ---
 

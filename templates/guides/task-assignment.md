@@ -95,7 +95,16 @@ Task-delivery operator guidance depends on Execution Mode. Use `autonomous_mode_
 | **Autonomous Mode** | Initialized, polling active | **No operator action** — Worker auto-picks on next §3.7 poll cycle |
 | **Autonomous Mode** | Initialized, polling stopped (Manager stopped per §2.10 or session ended) | Direct the User to run `{COMMAND_SLUG:work} <agent-id>` or `{COMMAND_SLUG:task} <agent-id>` |
 
-**Parallel dispatch:** In Autonomous Mode, each initialized Worker with active polling auto-picks independently — no per-Worker operator commands at the task-delivery boundary. In Manual Mode, direct the User to each Worker requiring `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}`.
+**Parallel dispatch:** Assess **each** Worker in the dispatch unit independently against the table above. Present a **numbered operator-action list** naming every Worker and whether action is required:
+
+| Worker state this turn | Operator action |
+|------------------------|-----------------|
+| Not initialized, or polling stopped, or no active Worker chat | **Required:** `{COMMAND_SLUG:work} <agent-id>` (or `{COMMAND_SLUG:task} <agent-id>`) |
+| Initialized with active polling | No action — auto-pick on next §3.7 cycle |
+
+Never assume the operator has all parallel Worker chats open. Omitting a required `{COMMAND_SLUG:work}` command for an uninitialized parallel Worker is a procedure violation per `{SKILL_PATH:apm-communication}` §2.4 Operator Worker Init.
+
+**Copy block format:** When any Worker requires init, emit **separate fenced blocks per Worker** per `{SKILL_PATH:apm-communication}` §2.4 Operator Worker Init Format, then **immediately** enter Report Queue Check in the **same turn** — do not stop or wait for operator action before polling.
 
 ### 2.7 Non-APM Agent Dispatch
 
@@ -147,7 +156,11 @@ Perform the following actions:
      - If the Worker is already initialized and actively polling — **no operator action** at the task-delivery boundary; the Worker auto-picks on the next §3.7 poll cycle. `{COMMAND_SLUG:task}` remains a manual fallback.
      - If the Worker's polling was stopped by the Manager (Worker tracking Notes indicate `polling stopped`, or the Worker session ended after review) — direct the User to run `{COMMAND_SLUG:work} <agent-id>` or `{COMMAND_SLUG:task} <agent-id>`.
    - For batch dispatch — summarize what the Worker will receive (number of Tasks, sequential execution).
-   - For parallel dispatch — list each Worker with its required action per §2.8 (Autonomous: typically no action for initialized polling Workers; Manual: `{COMMAND_SLUG:work}` or `{COMMAND_SLUG:task}` per Worker).
+   - For parallel dispatch — emit dispatch summary, then **separate per-Worker init copy blocks** per `{SKILL_PATH:apm-communication}` §2.4 for every Worker that is not actively polling, then **immediately** continue to Report Queue Check in the same turn.
+
+**Parallel dispatch write order:** Write **every** Task Prompt to its Worker's Task Bus **before** entering Manager Report Queue Check or ending the dispatch turn. After all writes, verify each target `.apm/bus/<agent-slug>/task.md` is non-empty. A parallel unit is incomplete if any Worker in the unit has an empty Task Bus while others are dispatched.
+
+**Workers already polling before dispatch:** When the operator started `{COMMAND_SLUG:work}` on Workers with empty Task Buses before Manager dispatch, those Workers are in §3.7 idle monitoring. After writing their Task Prompts, **do not** run `stop-task-polling.sh` for those Workers — they should pick up on the next poll cycle. Only stop Workers per §2.10 after reviewing their report when they have no further work.
 
 ### 3.4 Follow-Up Task Prompt Construction
 

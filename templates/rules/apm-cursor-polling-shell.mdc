@@ -1,0 +1,39 @@
+---
+alwaysApply: true
+---
+
+# APM Cursor Polling Shell
+
+**Cursor-only.** Use when running APM poll scripts during Autonomous Mode (Work Queue Check / Report Queue Check).
+
+Cursor's Shell tool defaults to `block_until_ms: 30000` (30s). Poll scripts run up to `${APM_POLL_CHUNK_SECONDS:-50}` seconds per invocation — without an explicit timeout, Cursor prompts the operator to click **Run in background** around 30s.
+
+## Poll script invocations
+
+When executing `.apm/scripts/poll-task-bus.sh` or `.apm/scripts/poll-report-bus.sh`:
+
+1. **Always set `block_until_ms`** — do not rely on the 30s default.
+2. **Preferred (foreground):** `block_until_ms: 60000` (or `(${APM_POLL_CHUNK_SECONDS:-50} + 10) * 1000` ms). Waits for the full chunk without operator interaction.
+3. **Alternative (background):** `block_until_ms: 0`, then use `Await` with a pattern matching `STILL_EMPTY|WORK_FOUND|REPORT_FOUND|POLLING_STOPPED` and `block_until_ms` ≥ chunk duration.
+4. **Do not** run separate `sleep` commands — check/sleep is internal to the poll script.
+5. On `STILL_EMPTY`, re-invoke the poll script immediately in the same turn (with `block_until_ms` set per above).
+
+## Examples
+
+Worker:
+
+```bash
+bash .apm/scripts/poll-task-bus.sh content-agent
+```
+
+Manager:
+
+```bash
+bash .apm/scripts/poll-report-bus.sh
+```
+
+Install alongside Autonomous Mode:
+
+```bash
+cp templates/rules/apm-cursor-polling-shell.mdc .cursor/rules/
+```

@@ -286,7 +286,7 @@ The Worker executes Task instructions, validates results, iterates if needed, lo
 
 **Completion** - After execution, the Worker commits work to the assigned branch following conventions from Rules (if version control is active), writes a Task Log, clears the incoming bus file, writes a Task Report to the Report Bus, and directs the User to deliver the report - providing both the targeted command with agent identifier and the general command, since multiple Workers may finish concurrently. For large Tasks, Workers may commit at logical intermediate points during execution rather than only at completion - each commit follows the conventions from Rules and represents a coherent unit of change.
 
-**Work Queue Check (Autonomous Mode)** - **When Autonomous Mode is active**, after Task Completion the Worker performs Work Queue Check (see `{GUIDE_PATH:task-execution}` §3.7): repeatedly runs `.apm/scripts/poll-task-bus.sh` with `sleep` between empty checks in a same-turn agent loop — not one long-running shell process (Cursor aborts those after ~60 seconds). Queue checking continues until work arrives or the operator runs `.apm/scripts/stop-task-polling.sh`. It also stops on Handoff, explicit operator direction, or a best-effort ~75% session context threshold. `{COMMAND_SLUG:task}` remains available as init trigger and Manual Mode fallback but is not required between back-to-back queued assignments for initialized Workers in Autonomous Mode. In **Manual Mode**, the Worker completes a single assignment and stops — Work Queue Check is not entered.
+**Work Queue Check (Autonomous Mode)** - **When Autonomous Mode is active**, after Task Completion the Worker performs Work Queue Check (see `{GUIDE_PATH:task-execution}` §3.7): runs `.apm/scripts/poll-task-bus.sh`, which loops internally (check → sleep → check) for up to `${APM_POLL_CHUNK_SECONDS:-50}` seconds per invocation; re-invokes on `STILL_EMPTY` in a same-turn agent loop until work arrives or the operator runs `.apm/scripts/stop-task-polling.sh`. It also stops on Handoff, explicit operator direction, or a best-effort ~75% session context threshold. `{COMMAND_SLUG:task}` remains available as init trigger and Manual Mode fallback but is not required between back-to-back queued assignments for initialized Workers in Autonomous Mode. In **Manual Mode**, the Worker completes a single assignment and stops — Work Queue Check is not entered.
 
 ### 7.3 Task Review
 
@@ -294,7 +294,7 @@ The Worker executes Task instructions, validates results, iterates if needed, lo
 
 The Manager reviews Worker results, determines review outcomes, modifies planning documents when needed, and updates the Tracker.
 
-**Report Queue Check (Autonomous Mode)** - **When Autonomous Mode is active**, after dispatch the Manager performs Report Queue Check (see `{GUIDE_PATH:task-review}` §3.8): repeatedly runs `.apm/scripts/poll-report-bus.sh` with `sleep` between empty checks in a same-turn agent loop — not one long-running shell process (Cursor aborts those after ~60 seconds). Report checking continues until a report is found, the operator runs `.apm/scripts/stop-report-polling.sh`, or a higher-priority stop condition applies (Handoff, explicit operator stop, context threshold, coordination complete, no active Workers). When a report is found, the Manager processes it in the same turn, dispatches follow-on Tasks or stops Worker queue checking when appropriate, and resumes Report Queue Check when Workers remain active. `{COMMAND_SLUG:review}` is the **primary path in Manual Mode** and a fallback when Autonomous Mode has stopped or is inactive.
+**Report Queue Check (Autonomous Mode)** - **When Autonomous Mode is active**, after dispatch the Manager performs Report Queue Check (see `{GUIDE_PATH:task-review}` §3.8): runs `.apm/scripts/poll-report-bus.sh`, which loops internally (check → sleep → check) for up to `${APM_POLL_CHUNK_SECONDS:-50}` seconds per invocation; re-invokes on `STILL_EMPTY` in a same-turn agent loop until a report is found, the operator runs `.apm/scripts/stop-report-polling.sh`, or a higher-priority stop condition applies (Handoff, explicit operator stop, context threshold, coordination complete, no active Workers). When a report is found, the Manager processes it in the same turn, dispatches follow-on Tasks or stops Worker queue checking when appropriate, and resumes Report Queue Check when Workers remain active. `{COMMAND_SLUG:review}` is the **primary path in Manual Mode** and a fallback when Autonomous Mode has stopped or is inactive.
 
 **Report processing** - The Manager reads the Task Report from the Report Bus. For batch reports, each Task's outcome is processed individually. Unstarted Tasks from a stopped batch re-enter the dispatch pool.
 
@@ -363,6 +363,22 @@ When Autonomous Mode is active, these stops end the autonomous session (inherite
 | Fail-fast batch failure | Per batch rules | Per review outcome |
 
 An empty Task Bus or Report Bus alone is **not** a stop condition — agents use same-turn check/wait/check while queue checking remains active.
+
+#### Operator Feedback (Concise Autonomous Mode)
+
+**Runtime:** `{SKILL_PATH:apm-communication}` §2.4 Concise Autonomous Feedback
+
+During Autonomous Mode polling, operator-facing chat follows three categories:
+
+| Category | When | Suppression |
+|----------|------|-------------|
+| **Wait-state** | Empty poll cycle, no new bus content | Yes — initial + optional refresh after quiet interval |
+| **State-change** | Task pickup, completion, report detection, dispatch | No — always emit |
+| **Substantive** | Review assessment, errors, stops, coupling fallback | No — full visible reasoning unchanged |
+
+**Quiet interval:** Refresh wait-state when `empty_poll_count >= APM_POLL_QUIET_CYCLES` (default 5) OR elapsed ≥ `APM_POLL_QUIET_SECONDS` (default 60), whichever comes first. Suppression affects chat only — poll script invocation and poll-until-stop semantics are unchanged.
+
+**Manual Mode exclusion:** Concise feedback applies only when `autonomous_mode_enabled` is true and the relevant polling flag is active. Manual Mode message patterns are unchanged.
 
 #### Autonomous Session End
 

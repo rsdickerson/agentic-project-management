@@ -3,7 +3,7 @@
 # Usage: bash .apm/scripts/stop-task-polling.sh <agent-slug>
 #
 # Run from any terminal while the Worker is polling. The poll loop checks
-# for this signal on each iteration and stops at the next "checking for work..." cycle.
+# for this signal on each iteration; the next poll-task-bus.sh returns POLLING_STOPPED.
 
 set -euo pipefail
 

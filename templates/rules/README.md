@@ -14,3 +14,13 @@ cp templates/rules/apm-autonomous.mdc .cursor/rules/
 Disable by removing `.cursor/rules/apm-autonomous.mdc` or running `/apm.autonomous disable`.
 
 After `apm update`, rule templates are also available at `templates/rules/` in the project bundle.
+
+## apm-cursor-polling-shell.mdc
+
+**Cursor-only.** Sets Shell `block_until_ms` for poll script invocations so chunk waits (~50s) complete without the operator clicking **Run in background** (Cursor defaults to 30s).
+
+```bash
+cp templates/rules/apm-cursor-polling-shell.mdc .cursor/rules/
+```
+
+Recommended when using Autonomous Mode in Cursor. Safe to combine with `apm-autonomous.mdc`.

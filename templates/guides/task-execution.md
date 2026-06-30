@@ -112,7 +112,7 @@ WHEN `autonomous_mode_enabled` is true:
 
 **On coupling_fail:**
 
-1. Announce:
+1. Announce (substantive — full message, not shortened per §2.4):
    ```
    Autonomous Mode requires both Manager and Worker participation.
    Falling back to Manual Mode for this session.
@@ -179,33 +179,35 @@ Perform the following actions:
 4. Write Task Report per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. Include relevant status indications:
    - *After Handoff.* If this is the first Task after Handoff initialization, include incoming Worker indication: state instance number, list the specific Task Log files loaded, and note that previous-Stage logs were not loaded.
    - *After recovery:* If auto-compaction occurred and recovery was performed via `{COMMAND_SLUG:recover}`, note it in the Task Report so the Manager is aware.
-5. Direct the User to deliver the Task Report to the Manager per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. When Autonomous Mode is active and the Manager is in Report Queue Check (`{GUIDE_PATH:task-review}` §3.8), writing the report to the Report Bus is sufficient — the Manager will detect it; still provide delivery guidance for Manual Mode or when queue checking is inactive.
+5. Direct the User to deliver the Task Report to the Manager per `{GUIDE_PATH:task-logging}` §3.2 Task Report Delivery. When Autonomous Mode is active and the Manager is in Report Queue Check (`{GUIDE_PATH:task-review}` §3.8), writing the report to the Report Bus is sufficient — the Manager will detect it via `poll-report-bus.sh`; **do not** instruct the operator to run `{COMMAND_SLUG:review}` as the primary next step. Mention Manual Mode fallback (`{COMMAND_SLUG:review}`) only when Autonomous Mode is inactive or queue checking is stopped.
 6. **Continue to Work Queue Check:** Proceed to §3.7 Work Queue Check Procedure. §3.7 step 0 Autonomous Mode gate determines whether polling runs or Manual Mode exit applies — when Autonomous Mode is active, run the poll script before sending any closing message; when Manual Mode, stop after delivery guidance per §3.7 step 0.
 
 ### 3.7 Work Queue Check Procedure
 
 After Task Completion, automatically check the Task Bus for additional assignments when Autonomous Mode gates permit entry. When the queue is empty, run the polling script in a **same-turn agent loop** until work arrives, polling is stopped, or a higher-priority stop condition applies.
 
-**Poll-until-stop (FR-017):** An empty Task Bus is **not** a stop condition. When the poll script returns `STILL_EMPTY`, run `sleep ${APM_POLL_INTERVAL:-10}` and call the check script again in the same conversation turn. **Do not** end the turn after a single empty check, idle announcement, or because Cursor aborted a long-running shell command — use repeated short shell calls instead. Continue until `WORK_FOUND`, `POLLING_STOPPED`, or a stop condition in §3.7.1 fires.
+**Idle init (empty Task Bus at `{COMMAND_SLUG:work}` start):** When the operator starts a Worker before Manager dispatch, the Task Bus may be empty initially. Enter §3.7 and **poll until `WORK_FOUND`** — the Manager may write the assignment while you are polling. **Do not** end the turn after an idle greeting, a single `STILL_EMPTY`, or because no Task is on the bus yet. Task arrival during idle monitoring is normal for parallel dispatch when Workers start before Manager.
+
+**Poll-until-stop (FR-017):** An empty Task Bus is **not** a stop condition. When the poll script returns `STILL_EMPTY`, re-invoke the poll script immediately in the same conversation turn — the script sleeps internally between checks. **Do not** run a separate `sleep` command. **Do not** end the turn after a single empty check, idle announcement, or because Cursor aborted a long-running shell command — re-invoke the poll script until `WORK_FOUND`, `POLLING_STOPPED`, or a stop condition in §3.7.1 fires.
 
 **Session attributes** (maintain during the session):
 - `polling_enabled`: Whether automatic queue-check is active. **Manual Mode default: false** at session init (§2.8). **Autonomous Mode default: true** after §3.7 step 0 gate permits entry. Set false when operator stops polling, context threshold triggers, or Manual Mode is detected.
 - `assignments_completed_this_session`: Count of Tasks completed this session (increment after each §3.6 completion)
+- **Poll stretch (Autonomous Mode only, per `{SKILL_PATH:apm-communication}` §2.4):** `empty_poll_count`, `wait_state_sent`, `last_wait_state_at` — track wait-state suppression during consecutive `STILL_EMPTY` results. Initialize on poll loop entry; reset on `WORK_FOUND`, task completion, or stop.
 
 **Scripts** (project root, shipped in `.apm/scripts/`):
-- Check once: `bash .apm/scripts/poll-task-bus.sh <agent-slug>` (returns `WORK_FOUND`, `STILL_EMPTY`, or `POLLING_STOPPED`)
-- Wait between checks: `sleep ${APM_POLL_INTERVAL:-10}` (separate short shell command)
+- Poll: `bash .apm/scripts/poll-task-bus.sh <agent-slug>` — internal check/sleep loop until `WORK_FOUND`, `POLLING_STOPPED`, or chunk timeout (`STILL_EMPTY`)
 - Stop button: `bash .apm/scripts/stop-task-polling.sh <agent-slug>`
 
-**Polling model:** The Worker runs the check script and sleep in a **same-turn agent loop** — not one long-running bash process. Cursor aborts shell commands that run longer than ~60 seconds; giving up after a few checks is a procedure violation.
+**Polling model:** The poll script loops internally (check → sleep → check) for up to `${APM_POLL_CHUNK_SECONDS:-50}` seconds per invocation. The Worker re-invokes the script on `STILL_EMPTY` in a **same-turn agent loop** — one shell tool call per chunk, not per internal check. Cursor aborts shell commands longer than ~60 seconds; chunk default stays under that limit. **Do not** run a separate `sleep` between invocations. Giving up after a few `STILL_EMPTY` chunks is a procedure violation.
 
 Perform the following actions:
 
 0. **Autonomous Mode gate:** Run §2.8 Execution Mode Detection. Then:
-   - **IF** `autonomous_mode_enabled` is false (**Manual Mode**): Confirm the User is directed to deliver the Task Report to the Manager. Instruct the operator to run `{COMMAND_SLUG:task}` or `{COMMAND_SLUG:work}` when the next assignment arrives. Set `polling_enabled = false`. **Do not** enter the Work Queue Check loop. Stop (end turn).
+   - **IF** `autonomous_mode_enabled` is false (**Manual Mode**): Confirm the User is directed to deliver the Task Report to the Manager. Instruct the operator to run `{COMMAND_SLUG:task}` or `{COMMAND_SLUG:work}` when the next assignment arrives. Set `polling_enabled = false`. **Do not** enter the Work Queue Check loop. **Do not** apply `{SKILL_PATH:apm-communication}` §2.4 wait-state suppression or compact heartbeat formats. Stop (end turn).
    - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Run §2.9 Mode Coupling Check. On **coupling_fail**, §2.9 handles Manual fallback and stop. On **coupling_ok**, set `polling_enabled = true` and continue to step 1.
 
-1. **Report delivery reminder:** Confirm the User is directed to deliver the latest Task Report to the Manager. If any prior Task Reports from this session remain undelivered, remind the User to deliver those outstanding reports before or alongside proceeding with new work — auto-pickup does not waive report delivery obligations.
+1. **Report delivery reminder:** When **Manual Mode** or Autonomous Mode with queue checking stopped: confirm the User is directed to deliver the latest Task Report to the Manager via `{COMMAND_SLUG:review}`. When **Autonomous Mode** is active and Manager Report Queue Check is expected, state that the report is on the Report Bus and the Manager will auto-detect — **do not** instruct `{COMMAND_SLUG:review}` as the primary next step. If prior Task Reports from this session remain undelivered, remind the User before proceeding with new work.
 
 2. **Polling gate:** If `polling_enabled` is false, announce that Work Queue Check (§3.7) is stopped. If queue checking was previously active this session under Autonomous Mode, emit §3.7.3 Autonomous Session End Message. Await explicit operator instruction to resume. Stop (end turn).
 
@@ -213,13 +215,23 @@ Perform the following actions:
 
 4. **Start polling loop (agent-driven):** Verify `.apm/scripts/poll-task-bus.sh` exists. If missing, inform the operator that APM must be updated (`apm update` or project-equivalent) to install polling scripts — do not end turn awaiting `{COMMAND_SLUG:task}`.
 
-   Remove any stale stop signal at `.apm/bus/<agent-slug>/polling.stop` if present. When Autonomous Mode is active, inform the operator that Work Queue Check is active and display the stop command:
+   **Stale stop (session entry):** If `clear-stale-polling-stop.sh <agent-slug>` was not run this session, run it now before step 4a.
+
+   **Do not manually delete `polling.stop` during active polling** — the poll script consumes the stop file when the operator runs the stop script mid-session. At session entry only, use `clear-stale-polling-stop.sh`.
+
+   **`POLLING_STOPPED` is terminal (mid-session):** When step 4b returns `POLLING_STOPPED` after the operator ran the stop script during **this** session, you MUST stop (set `polling_enabled` false, emit §3.7.3, end turn). **Do not** resume because the operator asked to "continue polling" in chat. **Exception:** leftover `polling.stop` from a prior session — run `clear-stale-polling-stop.sh` at `{COMMAND_SLUG:work}` entry (§2.1 step 3); if missed, run once and retry step 4a before §3.7.3.
+
+   **Agent re-invokes on STILL_EMPTY — no separate sleep.** Run step 4a as one shell call; the script sleeps internally between checks. Read stdout, branch in step 4b. On `STILL_EMPTY`, apply wait-state suppression then return to step 4a immediately — **do not** run `sleep` as a separate shell command. **Never** wrap multiple poll calls in a single shell command such as `for i in …; do poll…; sleep…; done` or `while …; do poll…; done` — branch on the **output text** (`WORK_FOUND`, `STILL_EMPTY`, `POLLING_STOPPED`), not only exit code.
+
+   When Autonomous Mode is active, display the stop command — **after** the first step 4a invocation, or interleaved with the poll loop, not instead of it. Apply wait-state suppression per `{SKILL_PATH:apm-communication}` §2.4 on `STILL_EMPTY` — do not announce Work Queue Check on every empty cycle:
 
    ```bash
    bash .apm/scripts/stop-task-polling.sh <agent-slug>
    ```
 
-   **Repeat** the following until `WORK_FOUND` or `POLLING_STOPPED` — do not end the turn, do not abort after a time limit or number of empty checks, and do not tell the operator to run `{COMMAND_SLUG:work}` again to resume polling. **`STILL_EMPTY` is not a stop signal** — always run sleep and return to step 4a:
+   **On poll loop entry (Autonomous Mode):** Initialize poll stretch attributes: `empty_poll_count = 0`, `wait_state_sent = false`, `last_wait_state_at = null`.
+
+   **Repeat** the following until `WORK_FOUND` or `POLLING_STOPPED` — do not end the turn, do not abort after a time limit or number of empty checks, and do not tell the operator to run `{COMMAND_SLUG:work}` again to resume polling. **`STILL_EMPTY` is not a stop signal** — re-invoke step 4a immediately (script slept internally):
 
    a. Run via shell tool:
 
@@ -228,13 +240,14 @@ Perform the following actions:
    ```
 
    b. Branch on output:
-   - **`WORK_FOUND`:** Exit this loop; continue to step 5.
-   - **`POLLING_STOPPED`:** Set `polling_enabled` false. Confirm polling was stopped via the stop button. Emit §3.7.3 Autonomous Session End Message. State how to resume (re-enable Autonomous Mode and re-engage `{COMMAND_SLUG:work}`, or use `{COMMAND_SLUG:task}` in Manual Mode). Stop (end turn).
-   - **`STILL_EMPTY`:** Run a separate short wait, then return to step 4a:
-
-   ```bash
-   sleep ${APM_POLL_INTERVAL:-10}
-   ```
+   - **`WORK_FOUND`:** Reset poll stretch attributes (`empty_poll_count`, `wait_state_sent`, `last_wait_state_at`). Emit **state-change** message per `{SKILL_PATH:apm-communication}` §2.4 (e.g., `Picked up Task {id}`). Exit this loop; continue to step 5.
+   - **`POLLING_STOPPED`:** Set `polling_enabled` false. Confirm polling was stopped via the stop button (stop file consumed on this check). Emit §3.7.3 Autonomous Session End Message. State how to resume (re-enable Autonomous Mode and re-engage `{COMMAND_SLUG:work}`, or use `{COMMAND_SLUG:task}` in Manual Mode). **Stop (end turn)** — do not return to step 4a or resume polling in this session. **Exception:** If `clear-stale-polling-stop.sh <agent-slug>` was **not** run this session and the operator did not run the stop script this session, run clear-stale once and return to step 4a — leftover stop files from prior sessions do not apply.
+   - **`STILL_EMPTY`:** Apply wait-state suppression per `{SKILL_PATH:apm-communication}` §2.4:
+     1. Increment `empty_poll_count`.
+     2. **IF** `wait_state_sent` is false: emit initial wait-state (`{agent-slug}: checking task queue…`); set `wait_state_sent = true`; record `last_wait_state_at`.
+     3. **ELSE IF** quiet interval elapsed (`empty_poll_count >= ${APM_POLL_QUIET_CYCLES:-5}` OR elapsed ≥ `${APM_POLL_QUIET_SECONDS:-60}` since `last_wait_state_at`): emit refresh wait-state (optional elapsed hint); reset `empty_poll_count` to 0; update `last_wait_state_at`.
+     4. **ELSE:** Suppress chat output for this cycle.
+     5. **Always:** Return to step 4a immediately — do not skip poll script because chat was suppressed; do not run a separate `sleep` command:
 
 5. **Read and validate Task Bus:** Read `.apm/bus/<agent-slug>/task.md` per `{SKILL_PATH:apm-communication}` §4 Message Bus Protocol.
    - **Invalid content:** Missing frontmatter, empty body, or unparseable structure — surface the error to the operator; do not execute. Stop (end turn).
@@ -278,7 +291,7 @@ When session context assessment per §2.7 yields `at_or_above_threshold` or `unc
 
 #### 3.7.3 Autonomous Session End Message (FR-010)
 
-When exiting an active autonomous Work Queue Check loop — stop script, operator explicit stop, Handoff, context threshold, coupling fail from autonomous state, or any §3.7.1 stop while `autonomous_mode_enabled` was true this session — emit before ending the turn:
+When exiting an active autonomous Work Queue Check loop — stop script, operator explicit stop, Handoff, context threshold, coupling fail from autonomous state, or any §3.7.1 stop while `autonomous_mode_enabled` was true this session — emit before ending the turn. This is **substantive** content per `{SKILL_PATH:apm-communication}` §2.4 — emit fully and unchanged; do not shorten for concise feedback:
 
 ```
 Autonomous session has ended.
@@ -300,8 +313,17 @@ Preserve unprocessed Task Bus assignments and Report Bus content. Do not auto-re
 - *Working non-incrementally:* Writing large deliverables in one pass without testing intermediate results. Build incrementally - compile, run, or validate after each meaningful step rather than producing everything and then discovering issues.
 - *Logging Success with incomplete validation:* Marking a Task as Success when validation criteria were not fully exercised. If criteria cannot be met (missing resources, need User cooperation), log as Partial and explain what remains rather than claiming Success with caveats.
 - *Ending turn instead of polling:* After Task Completion, telling the User to run `{COMMAND_SLUG:task}` or legacy names like `apm-4-check-tasks` instead of running the polling loop. Task Completion requires §3.7 polling when Autonomous Mode gates permit — not an idle handoff to the operator.
-- *Aborting polling early:* Ending the turn after a few empty checks, after a single `STILL_EMPTY`, because Cursor aborted a long-running shell command, or telling the User to run `{COMMAND_SLUG:work}` again to resume. Use the agent-driven loop (check → sleep → check) indefinitely until `WORK_FOUND`, `POLLING_STOPPED`, or a §3.7.1 stop condition. An empty Task Bus alone is never a valid reason to end the turn while polling is active.
+- *Bash for/while poll loops in agent shell:* Running `for …; do poll-task-bus.sh …; sleep …; done` (or `while`) in one agent shell command. The poll script loops internally — the agent re-invokes it on `STILL_EMPTY`. Do not add agent-side sleep between invocations.
+- *Separate sleep between poll invocations:* Running `sleep ${APM_POLL_INTERVAL:-10}` as its own shell call after `STILL_EMPTY`. Sleep is internal to the poll script; re-invoke immediately.
+- *Continuing after `POLLING_STOPPED`:* When `poll-task-bus.sh` returns `POLLING_STOPPED` after operator stop this session, treat as terminal. **Exception:** leftover stop file from a prior session — run `clear-stale-polling-stop.sh <agent-slug>` at `{COMMAND_SLUG:work}` entry (§2.1 step 3); if missed, run once and retry step 4a before §3.7.3.
+- *Stale stop treated as session end:* Emitting §3.7.3 on first poll because `polling.stop` existed from a prior session without running `clear-stale-polling-stop.sh <agent-slug>` at session entry.
+- *Manually clearing `polling.stop` during active polling:* Deleting the stop file mid-session bypasses the operator stop button. Use `clear-stale-polling-stop.sh` at `{COMMAND_SLUG:work}` session entry only.
+- *Aborting polling early:* Ending the turn after a few empty chunks, after a single `STILL_EMPTY`, because Cursor aborted a long-running shell command, or telling the User to run `{COMMAND_SLUG:work}` again to resume. Re-invoke the poll script on `STILL_EMPTY` indefinitely until `WORK_FOUND`, `POLLING_STOPPED`, or a §3.7.1 stop condition. An empty Task Bus alone is never a valid reason to end the turn while polling is active.
 - *Treating idle as stop:* Announcing the Worker is idle-ready and ending the turn while `polling_enabled` remains true and no stop condition from §3.7.1 applies. Idle monitoring **is** polling — keep the same-turn loop running.
+- *Wait-state every empty cycle:* Emitting a status line on every `STILL_EMPTY` instead of applying §2.4 suppression. During ≥10 empty polls, at most 2 wait-state lines (initial + optional refresh).
+- *Chat instead of polling:* Announcing queue checking without running `poll-task-bus.sh` via shell, or suppressing chat and skipping the poll script. Suppression affects operator output only — shell polling continues regardless.
+- *Per-cycle poll narration:* Echoing `STILL_EMPTY` in chat every chunk, or titling each shell call ("Poll task bus cycle 3", "Wait between task bus polls"). Poll scripts loop internally; one tool block per chunk. Wait-state is agent chat per §2.4 suppression — stay silent between heartbeats.
+- *Shortened stop/error messages:* Truncating §3.7.3 session-end, coupling fallback, or invalid bus content diagnostics for brevity. Substantive messages remain fully explicit per `{SKILL_PATH:apm-communication}` §2.4.
 
 ---
 

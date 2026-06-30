@@ -29,11 +29,18 @@ Read the following documents (these reads are independent):
 Determine identity from the `{ARGS}` argument:
 1. Resolve `{ARGS}` against `.apm/bus/` directory names per `{SKILL_PATH:apm-communication}` §4.2 Agent ID Resolution.
 2. Register as the resolved agent: store the agent identifier and bus path for this instance.
-3. Verify bus files exist (`task.md`, `report.md`, `handoff.md`) in the bus directory. Determine your init path from bus state:
+3. **Stale task-polling stop cleanup (every `{COMMAND_SLUG:work}` entry):** Run via shell:
+
+   ```bash
+   bash .apm/scripts/clear-stale-polling-stop.sh <agent-slug>
+   ```
+
+   Leftover `.apm/bus/<agent-slug>/polling.stop` from a prior session does **not** apply. If `STALE_STOP_CLEARED`, note briefly — **do not** emit §3.7.3 or treat as `POLLING_STOPPED`. Proceed with init normally.
+4. Verify bus files exist (`task.md`, `report.md`, `handoff.md`) in the bus directory. Determine your init path from bus state:
    - If Handoff Bus has content, you are an incoming Worker after Handoff. Proceed to §2.2 Incoming Worker Initiation.
    - If Handoff Bus is empty and Task Bus has content, confirm identity to User and proceed to §3 Task Execution Loop.
    - If both are empty, confirm identity to User. Run `{GUIDE_PATH:task-execution}` §2.8 Execution Mode Detection. Then:
-     - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Enter `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure (idle monitoring).
+     - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Enter `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure (idle monitoring). **Same-turn poll-until-stop required** — do not end the turn after greeting or a single empty check; the Manager may dispatch while you poll (common in parallel tests when Workers start before Manager). **Idle poll brevity:** Confirm agent id only, emit initial wait-state per `{SKILL_PATH:apm-communication}` §2.4, show stop command once — then invoke the poll script. Do not dump role recap, tracker history, or "what happens next" bullet lists before polling.
      - **ELSE (Manual Mode):** Announce idle-ready; await operator `{COMMAND_SLUG:task}` or Manager dispatch plus `{COMMAND_SLUG:work}`. **Do not** enter §3.7.
 
 ### 2.2 Incoming Worker Initiation
@@ -56,13 +63,13 @@ Perform the following actions:
 When a Task Prompt is available (detected during init, auto-picked from Task Bus, or delivered via `{COMMAND_SLUG:task}`):
 1. **Execute through completion:** See `{GUIDE_PATH:task-execution}` §3 Task Execution Procedure through §3.6 Task Completion (includes logging and reporting per `{GUIDE_PATH:task-logging}`).
 2. **After completion (Execution Mode branch):** Run `{GUIDE_PATH:task-execution}` §2.8 Execution Mode Detection if not yet run this session. Then:
-   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Without ending the turn, execute `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure. When the Task Bus is empty, repeat this **agent-driven loop** (short shell calls — not one long-running process):
+   - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Without ending the turn, execute `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure. Apply wait-state suppression and state-change formats per `{SKILL_PATH:apm-communication}` §2.4 Concise Autonomous Feedback. Poll with one shell call per chunk — `bash .apm/scripts/poll-task-bus.sh <agent-slug>` loops internally (check/sleep); branch on stdout (`WORK_FOUND` / `STILL_EMPTY` / `POLLING_STOPPED`); on `STILL_EMPTY` re-invoke immediately. **Do not** run a separate `sleep` command. **Do not** use a bash `for`/`while` loop in a single shell command.
 
    ```bash
    bash .apm/scripts/poll-task-bus.sh <agent-slug>
    ```
 
-   If output is `STILL_EMPTY`, run `sleep ${APM_POLL_INTERVAL:-10}` and call the check script again. Continue until `WORK_FOUND` or `POLLING_STOPPED`. **Do not give up** after a time limit or number of empty checks. **Do not** tell the User to run `{COMMAND_SLUG:work}` again to resume polling.
+   If output is `STILL_EMPTY`, invoke the poll script again immediately in the same turn. Continue until `WORK_FOUND` or `POLLING_STOPPED`. **On `POLLING_STOPPED`, stop immediately** — do not run another poll. **Do not give up** after a time limit or number of empty checks. **Do not** tell the User to run `{COMMAND_SLUG:work}` again to resume polling.
 
    - **ELSE (Manual Mode — default, FR-004):** Confirm Task Report delivery to the Manager. Instruct the operator:
      - Run `{COMMAND_SLUG:review}` on the Manager session when the report is delivered (if the Manager has not already reviewed).
@@ -71,9 +78,9 @@ When a Task Prompt is available (detected during init, auto-picked from Task Bus
 
 3. **On WORK_FOUND (Autonomous Mode only):** Process the new assignment (return to step 1). Same-turn exhaustion continues until polling stops or a stop condition applies.
 
-**Prohibited after Task Completion (Autonomous Mode):** Do not end the turn telling the User to run `{COMMAND_SLUG:task}`, `apm-4-check-tasks`, or `{COMMAND_SLUG:work}` to resume waiting. Do not report that polling was "aborted" and stop — keep looping until work arrives or the operator uses the stop button.
+**Prohibited after Task Completion (Autonomous Mode):** Do not end the turn telling the User to run `{COMMAND_SLUG:task}`, `apm-4-check-tasks`, or `{COMMAND_SLUG:work}` to resume waiting. Do not instruct `{COMMAND_SLUG:review}` as the primary report-delivery step when Autonomous Mode is active and Manager Report Queue Check is expected — the bus write is sufficient. Do not report that polling was "aborted" and stop — keep looping until work arrives or the operator uses the stop button.
 
-**Stop button (Autonomous Mode):** While polling, the operator can stop the loop by running `bash .apm/scripts/stop-task-polling.sh <agent-slug>` in a terminal.
+**Stop button (Autonomous Mode):** While polling, the operator can stop the loop by running `bash .apm/scripts/stop-task-polling.sh <agent-slug>` in a terminal. When the next poll returns `POLLING_STOPPED` after operator stop **this session**, **stop immediately**. Leftover `polling.stop` from a prior session is cleared at `{COMMAND_SLUG:work}` entry (§2.1 step 3) — not a stop event.
 
 ---
 
