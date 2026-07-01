@@ -104,7 +104,7 @@ Task-delivery operator guidance depends on Execution Mode. Use `autonomous_mode_
 
 Never assume the operator has all parallel Worker chats open. Omitting a required `{COMMAND_SLUG:work}` command for an uninitialized parallel Worker is a procedure violation per `{SKILL_PATH:apm-communication}` §2.4 Operator Worker Init.
 
-**Copy block format:** When any Worker requires init, emit **separate fenced blocks per Worker** per `{SKILL_PATH:apm-communication}` §2.4 Operator Worker Init Format, then **immediately** enter Report Queue Check in the **same turn** — do not stop or wait for operator action before polling.
+**Copy block format (all dispatch modes — single, batch, and parallel):** When **any** dispatched Worker requires init per the table above, you **MUST** emit `{SKILL_PATH:apm-communication}` §2.4 Operator Worker Init Format **before** entering Report Queue Check or running any poll script — including first dispatch to a **single** Worker at Stage start. Prose instructions ("run `/apm.work`") are **not** sufficient; use **separate fenced copy blocks per Worker**. Then **immediately** enter Report Queue Check in the **same turn** — do not stop or wait for operator action before polling.
 
 ### 2.7 Non-APM Agent Dispatch
 
@@ -149,14 +149,24 @@ Perform the following actions:
 4. Record the branch name in the Task row's Branch column when updating the Tracker.
 5. Clear the incoming Report Bus per §2.6 Delivery Standards.
 6. Read the Worker's Task Bus, then write the Task Prompt to it: `.apm/bus/<agent-slug>/task.md`. For batches, use §4.5 Batch Envelope Format.
-7. Direct the User to the Worker's chat per §2.8 Execution Mode Delivery Standards and `{SKILL_PATH:apm-communication}` §2.1 Direct Communication:
-   - **Manual Mode (`autonomous_mode_enabled` false):** Always direct the User to run `{COMMAND_SLUG:work} <agent-id>` on first dispatch to an uninitialized Worker, or `{COMMAND_SLUG:task}` / `{COMMAND_SLUG:work}` on subsequent deliveries. The Worker does not auto-pick.
-   - **Autonomous Mode (`autonomous_mode_enabled` true):**
-     - If the Worker is not yet initialized — direct the User to run `{COMMAND_SLUG:work} <agent-id>` once. The Worker detects the pending Task Prompt during init and begins executing; idle monitoring applies when the Task Bus is empty after completion.
-     - If the Worker is already initialized and actively polling — **no operator action** at the task-delivery boundary; the Worker auto-picks on the next §3.7 poll cycle. `{COMMAND_SLUG:task}` remains a manual fallback.
-     - If the Worker's polling was stopped by the Manager (Worker tracking Notes indicate `polling stopped`, or the Worker session ended after review) — direct the User to run `{COMMAND_SLUG:work} <agent-id>` or `{COMMAND_SLUG:task} <agent-id>`.
-   - For batch dispatch — summarize what the Worker will receive (number of Tasks, sequential execution).
-   - For parallel dispatch — emit dispatch summary, then **separate per-Worker init copy blocks** per `{SKILL_PATH:apm-communication}` §2.4 for every Worker that is not actively polling, then **immediately** continue to Report Queue Check in the same turn.
+7. **Operator Worker Init (required when init applies — all dispatch modes):** After step 6 completes for every Worker in this dispatch cycle, assess each dispatched Worker per §2.8 Execution Mode Delivery Standards. **This step is mandatory output — not optional narration.**
+
+   **Init required when:** Worker is not initialized, polling is stopped, or no active Worker chat this session (default at Stage start: **all** dispatched Workers).
+
+   **When init is required for any Worker:**
+   1. Emit one **dispatch summary** state-change line (Task ids → Worker slugs).
+   2. Emit **separate fenced copy blocks per Worker** per `{SKILL_PATH:apm-communication}` §2.4 Operator Worker Init Format — one fence per Worker, each containing the exact `{COMMAND_SLUG:work} <agent-id>` command to paste. **Prose alone is a procedure violation.**
+   3. **Do not** run `poll-report-bus.sh` or enter Report Queue Check until steps 1–2 are complete in chat.
+
+   **When no Worker requires init** (every dispatched Worker is actively polling this session): skip copy blocks; proceed to Report Queue Check.
+
+   **Execution Mode specifics:**
+   - **Manual Mode (`autonomous_mode_enabled` false):** Always use copy blocks on first dispatch to an uninitialized Worker; `{COMMAND_SLUG:task}` / `{COMMAND_SLUG:work}` on subsequent deliveries when polling is not active.
+   - **Autonomous Mode (`autonomous_mode_enabled` true):** Use copy blocks for every Worker not actively polling — including **single-Worker** first dispatch. Workers already polling auto-pick; no copy block for those.
+   - **Batch dispatch:** One copy block per Worker receiving the batch (if init required).
+   - **Parallel dispatch:** Copy block for **every** Worker in the unit that is not actively polling — never omit a parallel Worker.
+
+   After copy blocks (when required), **immediately** continue to Report Queue Check in the same turn.
 
 **Parallel dispatch write order:** Write **every** Task Prompt to its Worker's Task Bus **before** entering Manager Report Queue Check or ending the dispatch turn. After all writes, verify each target `.apm/bus/<agent-slug>/task.md` is non-empty. A parallel unit is incomplete if any Worker in the unit has an empty Task Bus while others are dispatched.
 

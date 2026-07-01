@@ -344,6 +344,8 @@ Perform the following actions:
 
 3. **Start polling loop (agent-driven):** Verify `.apm/scripts/poll-report-bus.sh` exists. If missing, inform the operator that APM must be updated (`apm update` or project-equivalent) to install polling scripts — do not end turn awaiting `{COMMAND_SLUG:review}`.
 
+   **Init-before-poll gate:** If this §3.8 entry follows dispatch and any dispatched Worker requires init, **confirm** dispatch summary and per-Worker fenced `{COMMAND_SLUG:work}` copy blocks are already in chat per `{SKILL_PATH:apm-communication}` §2.4. If not, emit them **now** before step 3a. **Do not** invoke `poll-report-bus.sh` until copy blocks are present.
+
    **Stale stop (session entry):** If `clear-stale-polling-stop.sh manager` was not run this session (operator resumed mid-procedure), run it now before step 3a — same rules as `{COMMAND_PATH:apm.manage}` §2 step 3.
 
    **End-of-turn gate (FR-017):** While `report_polling_enabled` is true, ending the conversation turn is **prohibited** unless one of these applies:
@@ -563,6 +565,7 @@ modified: Task 2.3 scope clarified based on task-02-02.log.md findings. Modified
 - *Wait-state every empty cycle:* Emitting a status line on every `STILL_EMPTY` instead of applying §2.4 suppression. During ≥10 empty polls, at most 2 wait-state lines (initial + optional refresh).
 - *Chat instead of polling:* Announcing report checking without running `poll-report-bus.sh` via shell, or suppressing chat and skipping the poll script. Suppression affects operator output only — shell polling continues regardless.
 - *Shortened review/stop/error messages:* Truncating review assessments, §3.8.2 session-end, coupling fallback, or malformed report diagnostics for brevity. Substantive messages remain fully explicit per `{SKILL_PATH:apm-communication}` §2.2 and §2.4.
+- *Omitting Worker init (single or parallel):* Dispatching without separate per-Worker fenced `{COMMAND_SLUG:work}` blocks when init is required — includes first dispatch to a **single** Worker at Stage start.
 - *Omitting parallel Worker init:* Dispatching to multiple Workers without separate per-Worker fenced `{COMMAND_SLUG:work}` blocks for each Worker that is not actively polling.
 - *Init narration without copy blocks:* Writing "Workers need initialization" without per-Worker fenced commands.
 - *Stopping after init:* Ending the turn after init copy blocks without immediately running `poll-report-bus.sh` in the same turn, or telling the operator to run `{COMMAND_SLUG:manage}` again to start polling.

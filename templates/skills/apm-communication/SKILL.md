@@ -137,6 +137,8 @@ Track per poll stretch (consecutive `STILL_EMPTY` in one turn before a state-cha
 
 #### Operator Worker Init (Required Direct Communication)
 
+**Scope:** Single-Worker, batch, and parallel dispatch — **always** when init applies. First dispatch at Stage start to one Worker still requires a fenced copy block; prose ("open a Worker chat") is not sufficient.
+
 Task-delivery operator guidance is **not** wait-state and **not** suppressible. When dispatching to a Worker that is uninitialized, has polling stopped, or has no active Worker chat this session, **MUST** instruct the operator to run `{COMMAND_SLUG:work} <agent-id>` (or `{COMMAND_SLUG:task} <agent-id>` when appropriate).
 
 **Parallel dispatch:** Never assume the operator already has all Worker chats open. For each Worker receiving a Task Prompt this turn, assess Worker tracking and include **every** Worker that is not actively polling in the copy block below — even when other Workers in the same parallel unit auto-pick without operator action.

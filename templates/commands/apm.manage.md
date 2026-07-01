@@ -70,7 +70,14 @@ Perform the following actions:
 
 After each review, reassess readiness and continue to dispatch in the same turn when Tasks are Ready without waiting for User input per `{GUIDE_PATH:task-review}` §2.4 Parallel Coordination Standards. Repeat until all Stages complete, User input is needed, User intervenes, or Handoff is needed.
 
-1. **Dispatch:** Run dispatch assessment per `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment, construct and deliver Task Prompt(s) per `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction. When any dispatched Worker is uninitialized or not actively polling, emit **separate per-Worker init copy blocks** per `{SKILL_PATH:apm-communication}` §2.4, then **immediately** enter §3.8 and run the poll script in the **same turn** — never end the turn after init instructions alone.
+1. **Dispatch:** Run dispatch assessment per `{GUIDE_PATH:task-assignment}` §3.1 Dispatch Assessment, construct and deliver Task Prompt(s) per `{GUIDE_PATH:task-assignment}` §3.3 Task Prompt Construction (through step 7 Operator Worker Init).
+
+   **Dispatch completion gate (hard requirement):** Before any `poll-report-bus.sh` invocation or §3.8 entry, verify in chat:
+   - [ ] Task Prompt(s) written to Task Bus(es)
+   - [ ] If any dispatched Worker requires init: dispatch summary **and** separate fenced `{COMMAND_SLUG:work}` copy block(s) emitted per `{SKILL_PATH:apm-communication}` §2.4 — **including single-Worker first dispatch**
+   - [ ] No poll script run yet if init copy blocks were still pending
+
+   When any dispatched Worker is uninitialized or not actively polling, emit **separate per-Worker init copy blocks** per `{SKILL_PATH:apm-communication}` §2.4, then **immediately** enter §3.8 and run the poll script in the **same turn** — never end the turn after init instructions alone, and **never** poll before init blocks are in chat.
 2. **Report checking (Execution Mode branch):** Run `{GUIDE_PATH:task-review}` §2.13 Execution Mode Detection if not yet run this session. Then:
    - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Enter Report Queue Check per `{GUIDE_PATH:task-review}` §3.8. Set `report_polling_enabled = true`. Apply wait-state suppression and state-change formats per `{SKILL_PATH:apm-communication}` §2.4 Concise Autonomous Feedback. When Autonomous Mode is active, the procedure detects Worker reports on the Report Bus, reviews them per Task Review §3, dispatches follow-on Tasks or stops Worker queue checking per §2.10, and resumes checking until stop conditions apply — without the operator running `{COMMAND_SLUG:review}` at the review boundary.
    - **ELSE (Manual Mode — default, FR-003):** Instruct the operator to run `{COMMAND_SLUG:review}` when Worker reports are delivered. Set `report_polling_enabled = false`. **Do not** enter Report Queue Check (§3.8). **Do not** run the report poll script. Stop coordination turn (end turn) after dispatch unless other same-turn work remains.
@@ -78,6 +85,7 @@ After each review, reassess readiness and continue to dispatch in the same turn 
    **Mandatory same-turn §3.8 execution (Autonomous Mode, FR-017):** Entering §3.8 means executing `{GUIDE_PATH:task-review}` §3.8 steps 3a–3b (shell poll loop) in **this same conversation turn** before ending. Dispatch → §3.8 is one continuous turn, not "dispatch now, poll later."
 
    **Prohibited after dispatch (Autonomous Mode):**
+   - Running `bash .apm/scripts/poll-report-bus.sh` **before** Operator Worker Init copy blocks appear in chat when any dispatched Worker requires init
    - Ending the turn while `report_polling_enabled` is true without having run `bash .apm/scripts/poll-report-bus.sh` at least once via the shell tool in this turn (unless a §3.8.1 stop condition was handled per procedure).
    - Ending the turn after per-Worker init copy blocks without immediately starting §3.8 polling in the same turn.
    - Telling the operator to run `{COMMAND_SLUG:manage}` again to start report polling — polling starts in the dispatch turn.
