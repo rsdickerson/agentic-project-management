@@ -1,0 +1,40 @@
+{
+  "source": "official",
+  "repository": "sdi2200262/agentic-project-management",
+  "releaseVersion": "v1.0.2",
+  "cliVersion": "1.0.1",
+  "assistants": [
+    "cursor"
+  ],
+  "installedFiles": {
+    "cursor": [
+      ".cursor/agents/apm-archive-explorer.md",
+      ".cursor/apm-guides/context-gathering.md",
+      ".cursor/apm-guides/task-assignment.md",
+      ".cursor/apm-guides/task-execution.md",
+      ".cursor/apm-guides/task-logging.md",
+      ".cursor/apm-guides/task-review.md",
+      ".cursor/apm-guides/work-breakdown.md",
+      ".cursor/commands/apm-1-initiate-planner.md",
+      ".cursor/commands/apm-2-initiate-manager.md",
+      ".cursor/commands/apm-3-initiate-worker.md",
+      ".cursor/commands/apm-4-check-tasks.md",
+      ".cursor/commands/apm-5-check-reports.md",
+      ".cursor/commands/apm-6-handoff-manager.md",
+      ".cursor/commands/apm-7-handoff-worker.md",
+      ".cursor/commands/apm-8-summarize-session.md",
+      ".cursor/commands/apm-9-recover.md",
+      ".cursor/skills/apm-communication/SKILL.md",
+      ".cursor/skills/apm-communication/bus-integration.md"
+    ],
+    "_apm": [
+      ".apm/memory/index.md",
+      ".apm/plan.md",
+      ".apm/spec.md",
+      ".apm/tracker.md"
+    ]
+  },
+  "installedAt": "2026-07-01T13:46:41.645Z",
+  "archivedAt": "2026-07-01T17:57:38.918Z",
+  "reason": "archive"
+}
