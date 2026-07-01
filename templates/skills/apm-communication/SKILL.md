@@ -217,6 +217,17 @@ While `report_polling_enabled` or `polling_enabled` is true:
 
 Substantive review assessments, errors, stops, and session-end messages remain full per §2.2 — brevity rules target polling repetition and procedural narration, not audit content.
 
+#### Coordination Re-Entry Brevity
+
+On `{COMMAND_SLUG:manage}` re-entry or Operator Resume (`resume` / `continue`) when Tracker shows **in-progress coordination** (Active Tasks, uninitialized Workers, or unprocessed reports):
+
+- **Skip** full understanding summary, version-control conventions recap, and execution-mode boilerplate.
+- Lead with **state delta only**: what changed since last turn (reports processed, Tasks Active, dispatch pending).
+- Emit per-Worker init copy blocks when required, then **immediately** poll — same turn.
+- **Do not** repeat project scope tables or Worker roster unless the operator asked for them.
+
+First Manager initiation (§2.1) and project completion (§4) retain full summaries — re-entry brevity applies only when coordination is already underway.
+
 #### Quiet Interval Configuration
 
 | Variable | Default | Description |
@@ -247,6 +258,8 @@ For a poll stretch with ≥10 consecutive empty cycles: maximum wait-state emiss
 - Repeat stop-script blocks or "Report Queue Check is active" every turn while polling
 - End a coordination turn with polling narration instead of running the poll loop or giving required Worker init commands
 - Echo or narrate poll script stdout (`STILL_EMPTY`, etc.) on every cycle — stdout appears in tool results; chat wait-state follows suppression rules only
+- On `{COMMAND_SLUG:manage}` re-entry or Operator Resume, repeat full understanding summary or VC recap when coordination is in progress — use Coordination Re-Entry Brevity instead
+- Tell the operator to run `{COMMAND_SLUG:manage}` again or "say resume" to process reports while autonomous polling should be active
 - Label each poll chunk in chat ("Poll task bus cycle N", "Wait between task bus polls") — poll silently except for suppressed wait-state heartbeats; one tool block per script invocation
 - Run `sleep` as a separate shell command between poll script invocations — the poll script sleeps internally
 

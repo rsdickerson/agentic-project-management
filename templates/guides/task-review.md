@@ -354,6 +354,12 @@ Perform the following actions:
    - You are continuing the same turn between step 3a shell output and the next step 3a re-invocation (or step 4–6 review-dispatch-resume)
    - Step 4–6 review-dispatch-resume is in progress in the same turn
 
+   **Pre-send self-check (mandatory before final assistant message):** If `autonomous_mode_enabled` is true AND `report_polling_enabled` is true AND no §3.8.1 stop condition was handled this cycle:
+   - Confirm `poll-report-bus.sh` ran via shell **after** the most recent dispatch in **this turn**
+   - **IF** the last poll output was `STILL_EMPTY` → invoke step 3a again; **do not** send the final message yet
+   - **IF** the draft message tells the operator to run `{COMMAND_SLUG:manage}`, `{COMMAND_SLUG:review}`, or "say resume" to process reports → delete that instruction and continue polling instead
+   - **IF** the draft message says "checking for reports" or similar without a poll invocation after it in this turn → run step 3a before sending
+
    Announcing "Report Queue Check is active", "I'll process when the report arrives", or similar **does not** satisfy this gate. You must run the shell poll loop.
 
    **Operator init then poll (same turn):** When this §3.8 entry follows a dispatch that wrote Task Prompts to Workers not actively polling, emit **separate per-Worker init copy blocks** per `{SKILL_PATH:apm-communication}` §2.4, then **immediately** run step 3a in this turn. Init blocks do **not** pause coordination — the Manager polls while the operator opens Worker chats. **Do not end the turn** between init blocks and step 3a.
@@ -572,6 +578,13 @@ modified: Task 2.3 scope clarified based on task-02-02.log.md findings. Modified
 - *Combined init fence:* Listing all Workers in one code fence instead of separate fences per Worker.
 - *Poll before init blocks:* Running `poll-report-bus.sh` before emitting per-Worker Operator Worker Init when any dispatched Worker requires init.
 - *Polling boilerplate every turn:* Repeating execution-mode recap, "Report Queue Check is active", or stop-script blocks on every review-dispatch cycle while polling continues — use §2.4 wait-state suppression and show stop command once per poll-loop entry.
+- *Banned re-run instructions (Autonomous Mode):* Telling the operator any of the following while `report_polling_enabled` is true and Workers are active — run §3.8 poll loop or `{COMMAND_PATH:apm.manage}` §2.3 Operator Resume instead:
+  - "Run `{COMMAND_SLUG:manage}` again" (or "re-run `{COMMAND_SLUG:manage}`") to start or resume report polling
+  - "Run `{COMMAND_SLUG:manage}` again (or say resume)" to process reports
+  - "leave this session polling" — the turn ends when you stop; polling does not continue in the background
+  - "once the Worker finishes" / "when the Integration Agent completes" without an active `poll-report-bus.sh` loop in this turn
+  - "I'll process the report when it arrives" without immediately running step 3a
+- *Resume as status-only:* When the operator says `resume` or `continue`, ending the turn after a status table without re-entering §3.8 — treat as Operator Resume per `{COMMAND_PATH:apm.manage}` §2.3.
 
 ---
 

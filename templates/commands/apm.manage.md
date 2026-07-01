@@ -64,6 +64,23 @@ Perform the following actions:
 4. Clear the Handoff Bus after processing.
 5. Confirm Handoff and resume coordination per §3 Continuous Coordination.
 
+### 2.3 Operator Resume (`resume` / `continue`)
+
+When the operator sends `resume`, `continue`, or equivalent (not `{COMMAND_SLUG:manage}`) and coordination is in progress:
+
+1. Run `bash .apm/scripts/clear-stale-polling-stop.sh manager` via shell.
+2. Read `.apm/tracker.md` and scan Report Buses for unprocessed content.
+3. **IF** any Report Bus has content → process per `{GUIDE_PATH:task-review}` §3 Task Review Procedure immediately; continue dispatch/reassessment in the same turn.
+4. **ELSE IF** `autonomous_mode_enabled` is true and Active Tasks or uninitialized Workers remain → **enter `{GUIDE_PATH:task-review}` §3.8 Report Queue Check** and poll until `REPORT_FOUND`, `POLLING_STOPPED`, or a §3.8.1 stop condition — same as after dispatch. **Do not** end the turn after a status summary or single `STILL_EMPTY`.
+5. **ELSE IF** project complete (`completed_at` in Tracker) → present current state briefly; do not re-enter §3.8.
+6. **ELSE (Manual Mode or autonomous stopped):** Await `{COMMAND_SLUG:manage}` or `{COMMAND_SLUG:review}`.
+
+**On resume (Autonomous Mode, in-progress coordination):**
+
+- **Do not** re-present understanding summary, version-control conventions, or full execution-mode recap.
+- **Do not** tell the operator to run `{COMMAND_SLUG:manage}` again to start or resume report polling.
+- Lead with state delta (pending reports, Active Tasks, Workers waiting) then poll or process.
+
 ---
 
 ## 3. Continuous Coordination
@@ -89,6 +106,9 @@ After each review, reassess readiness and continue to dispatch in the same turn 
    - Ending the turn while `report_polling_enabled` is true without having run `bash .apm/scripts/poll-report-bus.sh` at least once via the shell tool in this turn (unless a §3.8.1 stop condition was handled per procedure).
    - Ending the turn after per-Worker init copy blocks without immediately starting §3.8 polling in the same turn.
    - Telling the operator to run `{COMMAND_SLUG:manage}` again to start report polling — polling starts in the dispatch turn.
+   - Telling the operator to run `{COMMAND_SLUG:manage}` again (or "say resume") to process reports while Workers are active and `report_polling_enabled` should be true — use §3.8 poll loop or §2.3 Operator Resume instead.
+   - Saying "leave this session polling" or implying the Manager will keep polling after the turn ends — the poll loop runs in the **current turn** only; ending the turn stops polling until operator re-engages.
+   - Promising to review "once the Worker finishes" without an active `poll-report-bus.sh` loop running in this turn.
    - One combined fenced block for all Workers — use separate fences per Worker.
    - Saying "Workers need initialization" without per-Worker fenced `{COMMAND_SLUG:work}` commands.
    - Announcing "Report Queue Check is active" or "I'll process the report when it arrives" without immediately starting the §3.8 step 3 poll loop.

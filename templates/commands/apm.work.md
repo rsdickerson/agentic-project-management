@@ -56,6 +56,22 @@ Perform the following actions:
      - **IF** `autonomous_mode_enabled` is true (**Autonomous Mode**): Enter `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check Procedure (idle monitoring).
      - **ELSE (Manual Mode):** Announce idle-ready; await operator `{COMMAND_SLUG:task}` or Manager dispatch plus `{COMMAND_SLUG:work}`. **Do not** enter §3.7.
 
+### 2.3 Operator Resume (`resume` / `continue`)
+
+When the operator sends `resume`, `continue`, or equivalent (not `{COMMAND_SLUG:work}`) mid-session:
+
+1. Run `bash .apm/scripts/clear-stale-polling-stop.sh <agent-slug>` via shell.
+2. Read Task Bus and `.apm/tracker.md` for new assignments for this Worker.
+3. **IF** Task Bus has content → proceed to §3 Task Execution Loop.
+4. **ELSE IF** `autonomous_mode_enabled` is true and Plan assigns further Tasks to this Worker (or Task status is Active) → **enter `{GUIDE_PATH:task-execution}` §3.7 Work Queue Check** and poll until `WORK_FOUND`, `POLLING_STOPPED`, or a §3.7.1 stop condition — same as after Task Completion.
+5. **ELSE IF** Plan assigns no further Tasks to this Worker → emit one concise line that no further assignments exist; recommend `bash .apm/scripts/stop-task-polling.sh <agent-slug>`. **Do not** emit full §3.7.3 Autonomous Session End Message unless `POLLING_STOPPED` or an operator stop fired this session.
+6. **ELSE (Manual Mode or polling stopped):** Await `{COMMAND_SLUG:task}` or `{COMMAND_SLUG:work}`.
+
+**On resume (Autonomous Mode):**
+
+- **Do not** repeat full role recap, execution-mode boilerplate, or option menus before polling.
+- **Do not** tell the operator to run `{COMMAND_SLUG:work}` again to resume polling — re-enter §3.7 in this turn.
+
 ---
 
 ## 3. Task Execution Loop

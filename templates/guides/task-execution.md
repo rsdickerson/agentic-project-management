@@ -260,6 +260,15 @@ Perform the following actions:
 
 8. **Same-turn exhaustion:** After completing step 7, return to step 2 (Work Queue Check loop) without ending the conversation turn — continue until polling is stopped, a stop condition applies, or `polling_enabled` is false.
 
+**No further Plan tasks (idle after completion):** When `.apm/plan.md` and Tracker show **no further Tasks** assigned to this Worker (e.g. single-Task Stage complete), after an idle poll stretch you may exit the poll loop without indefinite waiting:
+
+1. Emit **one** concise line: no further assignments; this Worker is done for the project unless the Manager dispatches additional work.
+2. Recommend `bash .apm/scripts/stop-task-polling.sh <agent-slug>` if the operator wants to close the session.
+3. **Do not** emit §3.7.3 Autonomous Session End Message unless `POLLING_STOPPED`, operator explicit stop, Handoff, context threshold, or coupling fail fired **this session**.
+4. **Do not** present multi-option menus ("stop polling / switch to integration-agent / Manager review") — state facts briefly and stop (end turn).
+
+When further Tasks **may** arrive (Active Stage, parallel dispatch pending, or Tracker shows this Worker with future Ready Tasks), continue poll-until-stop per FR-017 — an empty Task Bus alone is not sufficient to end polling.
+
 #### 3.7.1 Stop Conditions
 
 Evaluate in priority order when multiple conditions may apply:
@@ -324,6 +333,8 @@ Preserve unprocessed Task Bus assignments and Report Bus content. Do not auto-re
 - *Chat instead of polling:* Announcing queue checking without running `poll-task-bus.sh` via shell, or suppressing chat and skipping the poll script. Suppression affects operator output only — shell polling continues regardless.
 - *Per-cycle poll narration:* Echoing `STILL_EMPTY` in chat every chunk, or titling each shell call ("Poll task bus cycle 3", "Wait between task bus polls"). Poll scripts loop internally; one tool block per chunk. Wait-state is agent chat per §2.4 suppression — stay silent between heartbeats.
 - *Shortened stop/error messages:* Truncating §3.7.3 session-end, coupling fallback, or invalid bus content diagnostics for brevity. Substantive messages remain fully explicit per `{SKILL_PATH:apm-communication}` §2.4.
+- *False session-end on done Worker:* Emitting §3.7.3 after idle poll when Plan assigns no further Tasks to this Worker and no `POLLING_STOPPED` or operator stop fired — use the no-further-tasks concise exit in §3.7 instead.
+- *Resume as status-only:* When the operator says `resume` or `continue`, ending the turn with option menus without re-entering §3.7 — treat as Operator Resume per `{COMMAND_PATH:apm.work}` §2.3.
 
 ---
 
