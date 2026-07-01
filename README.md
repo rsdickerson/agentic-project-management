@@ -102,6 +102,20 @@ APM supports custom repositories for teams that want to modify the workflow. For
 
 See the [Customization Guide](https://agentic-project-management.dev/docs/customization-guide) for details.
 
+### APM Autonomous
+
+**Autonomous Execution Mode** is a built-in opt-in workflow shipped with APM (not a separate repository). When enabled, the Manager and Workers coordinate through paired polling loops on the Message Bus — the Manager automatically checks for Worker reports after dispatch, and Workers automatically check for new Tasks after completion. You still open separate Manager and Worker chats, but you no longer need to run `/apm.review` and `/apm.task` at every boundary while coordination is active.
+
+Enable with `/apm.autonomous enable` (installs `.cursor/rules/apm-autonomous.mdc`) or copy `templates/rules/apm-autonomous.mdc` into `.cursor/rules/` after `apm update`. Disable with `/apm.autonomous disable` or by removing the rule. Manual Mode remains the default when the rule is absent.
+
+Best for multi-Worker projects where you want hands-off coordination between task cycles — parallel Stage dispatch, long-running sessions, and exercising the full Manager/Worker bus protocol. Use stop scripts or Handoff when you need to intervene; `/apm.review` and `/apm.work` remain fallbacks when autonomous coordination stops.
+
+```
+/apm.autonomous enable
+/apm.manage
+/apm.work <agent-slug>
+```
+
 ### APM Auto
 
 [APM Auto](https://github.com/sdi2200262/apm-auto) is an official custom adaptation of APM built for Claude Code. It replaces the user-mediated Worker model with autonomous subagent dispatch - the Manager spawns ephemeral subagents via `Agent()` to execute Tasks, reviews their output, and continues without requiring you to shuttle messages between chats. Best for prototyping, fast execution, and simpler projects.
